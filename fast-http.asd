@@ -16,10 +16,11 @@
   :author "Eitaro Fukamachi"
   :license "MIT"
   :depends-on (:alexandria
+               :babel
                :log4cl)
   :components ((:module "src"
                 :components
-                ((:file "fast-http" :depends-on ("parser" "error"))
+                ((:file "fast-http" :depends-on ("parser" "byte-vector" "error"))
                  (:file "parser"  :depends-on ("byte-vector" "url" "variables" "error" "util"))
                  (:file "byte-vector")
                  (:file "url" :depends-on ("variables" "util"))
