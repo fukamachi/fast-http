@@ -238,7 +238,7 @@
 (defun http-parse (parser callbacks data &key (start 0) end)
   (declare (type simple-byte-vector data)
            (type pointer start)
-           (optimize (speed 3) (safety 0)))
+           (optimize (speed 3) (safety 2)))
   (let ((mark (init-mark (parser-mark parser)))
         (end (or end (length data)))
         (header-read (parser-header-read parser)))
@@ -267,6 +267,7 @@
            (error 'invalid-eof-state))))
 
       (flet ((check-header-overflow ()
+               (declare (optimize (speed 3) (safety 0)))
                (when (< +http-max-header-size+ (incf header-read))
                  (error 'header-overflow))))
         (tagbody
@@ -280,7 +281,7 @@
                  (check-header-overflow))
 
                (macrolet ((go-state (state &optional (advance 1) (set-state t))
-                            `(progn
+                            `(locally (declare (optimize (speed 3) (safety 0)))
                                ,@(and set-state
                                       `((setf (parser-state parser) ,state)))
                                ,(cond
