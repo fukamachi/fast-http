@@ -238,7 +238,7 @@
 (defun http-parse (parser callbacks data &key (start 0) end)
   (declare (type simple-byte-vector data)
            (type pointer start)
-           (optimize (speed 3) (safety 0) (debug 0)))
+           (optimize (speed 3) (safety 0)))
   (let ((mark (init-mark (parser-mark parser)))
         (end (or end (length data)))
         (header-read (parser-header-read parser)))
