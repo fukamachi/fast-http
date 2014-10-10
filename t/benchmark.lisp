@@ -26,16 +26,19 @@
        (let ((parser (make-parser http)))
          (funcall parser data))))))
 
+#.(defparameter *profile-packages*
+    '("FAST-HTTP" "FAST-HTTP.PARSER" "FAST-HTTP.BYTE-VECTOR" "FAST-HTTP.SUBSEQS" "FAST-HTTP.URL" "FAST-HTTP.ERROR" "FAST-HTTP.UTIL"))
+
 #+sbcl
 (defun run-ll-profile ()
-  (sb-profile:profile "FAST-HTTP" "FAST-HTTP.ERROR" "FAST-HTTP.BYTE-VECTOR" "FAST-HTTP.UTIL")
+  #.`(sb-profile:profile ,@*profile-packages*)
   (run-ll-benchmark)
   (sb-profile:report)
-  (sb-profile:unprofile "FAST-HTTP" "FAST-HTTP.ERROR" "FAST-HTTP.BYTE-VECTOR" "FAST-HTTP.UTIL"))
+  #.`(sb-profile:unprofile ,@*profile-packages*))
 
 #+sbcl
 (defun run-profile ()
-  (sb-profile:profile "FAST-HTTP" "FAST-HTTP.ERROR" "FAST-HTTP.BYTE-VECTOR" "FAST-HTTP.UTIL")
+  #.`(sb-profile:profile ,@*profile-packages*)
   (run-benchmark)
   (sb-profile:report)
-  (sb-profile:unprofile "FAST-HTTP" "FAST-HTTP.ERROR" "FAST-HTTP.BYTE-VECTOR" "FAST-HTTP.UTIL"))
+  #.`(sb-profile:unprofile ,@*profile-packages*))
