@@ -3,8 +3,6 @@
   (:use :cl)
   (:import-from :fast-http.error
                 :strict-error)
-  (:import-from :cl-ppcre
-                :scan)
   (:import-from :alexandria
                 :once-only
                 :ensure-list)
@@ -88,5 +86,24 @@
           buffer)))))
 
 (defun number-string-p (string)
-  (declare (type string string))
-  (not (null (ppcre:scan "^\\s*(?:\\d*[.])?\\d+\\s*$" string))))
+  (declare (type string string)
+           (optimize (speed 3) (safety 2)))
+  (let ((end (length string))
+        (dot-read-p nil))
+    (when (zerop end)
+      (return-from number-string-p nil))
+    (do ((i 0 (1+ i)))
+        ((= i end) T)
+      (let ((char (aref string i)))
+        (declare (type character char))
+        (cond
+          ((alpha-char-p char)
+           (return-from number-string-p nil))
+          ((digit-char-p char))
+          ((char= char #\.)
+           (when dot-read-p
+             (return-from number-string-p nil))
+           (setq dot-read-p t))
+          ((or (char= char #\Space)
+               (char= char #\Tab)))
+          (T (return-from number-string-p nil)))))))
