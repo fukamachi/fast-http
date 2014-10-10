@@ -295,7 +295,7 @@
                                             `((check-header-overflow)))
                                      (setq byte (aref data p))
                                      (log:debug (code-char byte))
-                                     (log:debug ',state)))
+                                     (log:debug ,(princ-to-string state))))
                                (go ,state)))
                           (with-new-message (parser &body form)
                             `(cond-new-message ,parser
