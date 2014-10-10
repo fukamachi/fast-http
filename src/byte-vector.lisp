@@ -19,7 +19,8 @@
            :alphanumeric-byte-char-p
            :mark-byte-char-p
            :ascii-octets-to-upper-string
-           :case-byte))
+           :case-byte
+           :append-byte-vectors))
 (in-package :fast-http.byte-vector)
 
 (defconstant +cr+ (char-code #\Return))
@@ -117,3 +118,15 @@
                collect `(,(mapcar #'char-code val) ,@form)
              else
                collect `(,(char-code val) ,@form))))
+
+(defun append-byte-vectors (vec1 vec2)
+  (declare (type simple-byte-vector vec1 vec2)
+           (optimize (speed 3) (safety 0)))
+  (let* ((vec1-len (length vec1))
+         (vec2-len (length vec2))
+         (result (make-array (+ vec1-len vec2-len)
+                             :element-type '(unsigned-byte 8))))
+    (declare (type simple-byte-vector result))
+    (replace result vec1 :start1 0)
+    (replace result vec2 :start1 vec1-len)
+    result))

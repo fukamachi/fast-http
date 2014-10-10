@@ -89,4 +89,4 @@
 
 (defun number-string-p (string)
   (declare (type string string))
-  (not (null (ppcre:scan "^(?:\\d*[.])?\\d+$" string))))
+  (not (null (ppcre:scan "^\\s*(?:\\d*[.])?\\d+\\s*$" string))))

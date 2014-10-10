@@ -100,132 +100,146 @@
   (let* ((header-value-collector nil)
          (current-len 0)
          (header-complete-p nil)
-         (completep nil)
+         (completedp nil)
 
          (parsing-transfer-encoding-p nil)
          (chunked nil)
          (parsing-content-length-p nil)
          (content-length nil)
          (read-body-length 0)
+         (body-bytes (make-collector)) ;; for chunking
 
          (responsep (http-response-p http))
          (parser (make-ll-parser :type (if responsep :response :request)))
          callbacks)
-    (with-collectors (headers body-bytes)
-      (setq callbacks
-            (make-ll-callbacks
-             :status (and responsep
-                          (named-lambda status-cb (parser data start end)
-                            (declare (type simple-byte-vector data))
-                            (setf (http-status http)
-                                  (parser-status-code parser))
-                            (setf (http-status-text http)
-                                  (babel:octets-to-string data :start start :end end))))
-             :header-field (and (or header-callback body-callback)
-                                (named-lambda header-field-cb (parser data start end)
-                                  (declare (ignore parser)
-                                           (type simple-byte-vector data))
-                                  (when header-value-collector
-                                    ;; Collect the previous header-value
-                                    (let* ((header-value
-                                             (byte-vector-subseqs-to-string
-                                              (funcall (the function header-value-collector))
-                                              current-len))
-                                           (header-value
-                                             (if (number-string-p header-value)
-                                                 (read-from-string header-value)
-                                                 header-value)))
-                                      (cond
-                                        (parsing-transfer-encoding-p
-                                         (when (string= header-value "chunked")
-                                           (setq chunked t))
-                                         (setq parsing-transfer-encoding-p nil))
-                                        (parsing-content-length-p
-                                         (setq content-length header-value
-                                               parsing-content-length-p nil)))
-                                      (headers header-value)))
-                                  (setq header-value-collector (make-collector))
-                                  (setq current-len 0)
+    (with-collectors (headers)
+      (flet ((collect-prev-header-value ()
+               (when header-value-collector
+                 ;; Collect the previous header-value
+                 (let* ((header-value
+                          (byte-vector-subseqs-to-string
+                           (funcall (the function header-value-collector))
+                           current-len))
+                        (header-value
+                          (if (number-string-p header-value)
+                              (read-from-string header-value)
+                              header-value)))
+                   (cond
+                     (parsing-transfer-encoding-p
+                      (when (equal header-value "chunked")
+                        (setq chunked t))
+                      (setq parsing-transfer-encoding-p nil))
+                     (parsing-content-length-p
+                      (setq content-length header-value
+                            parsing-content-length-p nil)))
+                   (headers header-value)))))
+        (setq callbacks
+              (make-ll-callbacks
+               :status (and responsep
+                            (named-lambda status-cb (parser data start end)
+                              (declare (type simple-byte-vector data))
+                              (setf (http-status http)
+                                    (parser-status-code parser))
+                              (setf (http-status-text http)
+                                    (babel:octets-to-string data :start start :end end))))
+               :header-field (and (or header-callback body-callback)
+                                  (named-lambda header-field-cb (parser data start end)
+                                    (declare (ignore parser)
+                                             (type simple-byte-vector data))
+                                    (collect-prev-header-value)
+                                    (setq header-value-collector (make-collector))
+                                    (setq current-len 0)
 
-                                  ;; Collect the header-field
-                                  (let ((header-field
-                                          (intern (ascii-octets-to-upper-string data :start start :end end)
-                                                  :keyword)))
-                                    (case header-field
-                                      (:transfer-encoding
-                                       (setq parsing-transfer-encoding-p t))
-                                      (:content-length
-                                       (setq parsing-content-length-p t)))
-                                    (headers header-field))))
-             :header-value (and header-callback
-                                (named-lambda header-value-cb (parser data start end)
-                                  (declare (ignore parser)
-                                           (type simple-byte-vector data))
-                                  (incf current-len (- end start))
-                                  (funcall (the function header-value-collector)
-                                           (make-byte-vector-subseq data start end))))
-             :headers-complete (labels ((headers-complete-cb-with-callback (parser)
-                                          (headers-complete-cb parser)
-                                          ;; collecting the last header-value buffer.
-                                          (headers
-                                           (byte-vector-subseqs-to-string
-                                            (funcall (the function header-value-collector))
-                                            current-len))
-                                          (setf (http-headers http) headers)
-                                          (funcall (the function header-callback) headers))
-                                        (headers-complete-cb (parser)
-                                          (setq header-complete-p t)
-                                          (setf (http-version http)
-                                                (+ (parser-http-major parser)
-                                                   (/ (parser-http-minor parser) 10)))
-                                          (setf (http-method http) (parser-method parser))))
-                                 (if header-callback
-                                     #'headers-complete-cb-with-callback
-                                     #'headers-complete-cb))
-             :url (named-lambda url-cb (parser data start end)
-                    (declare (ignore parser)
-                             (type simple-byte-vector data))
-                    (setf (http-resource http)
-                          (babel:octets-to-string data :start start :end end)))
-             :body (and body-callback
-                        (named-lambda body-cb (parser data start end)
-                          (declare (ignore parser)
-                                   (type simple-byte-vector data))
-                          (incf read-body-length (- end start))
-                          (cond
-                            (chunked
-                             (funcall (the function body-callback) body-bytes)
-                             ;; Collect this subseq for :message-complete callback
-                             (when (http-store-body http)
-                               (body-bytes (make-byte-vector-subseq data start end)))
-                             (funcall body-callback (subseq data start end)))
-                            (content-length
-                             (body-bytes (make-byte-vector-subseq data start end))
-                             (when (<= content-length read-body-length)
-                               (let ((body (byte-vector-subseqs-to-byte-vector body-bytes
+                                    ;; Collect the header-field
+                                    (let ((header-field
+                                            (intern (ascii-octets-to-upper-string data :start start :end end)
+                                                    :keyword)))
+                                      (case header-field
+                                        (:transfer-encoding
+                                         (setq parsing-transfer-encoding-p t))
+                                        (:content-length
+                                         (setq parsing-content-length-p t)))
+                                      (headers header-field))))
+               :header-value (labels ((parse-header-value (parser data start end)
+                                        (declare (ignore parser)
+                                                 (type simple-byte-vector data))
+                                        (incf current-len (- end start))
+                                        (funcall (the function header-value-collector)
+                                                 (make-byte-vector-subseq data start end)))
+                                      (parse-header-value-only-some-headers (parser data start end)
+                                        (when (or parsing-content-length-p
+                                                  parsing-transfer-encoding-p)
+                                          (parse-header-value parser data start end))))
+                               (cond
+                                 (header-callback #'parse-header-value)
+                                 (body-callback #'parse-header-value-only-some-headers)))
+               :headers-complete (labels ((headers-complete-cb-with-callback (parser)
+                                            (headers-complete-cb parser)
+                                            (collect-prev-header-value)
+                                            (setq header-value-collector nil)
+                                            (setf (http-headers http) headers)
+                                            (funcall (the function header-callback) headers))
+                                          (headers-complete-cb (parser)
+                                            (setq header-complete-p t)
+                                            (setf (http-version http)
+                                                  (+ (parser-http-major parser)
+                                                     (/ (parser-http-minor parser) 10)))
+                                            (unless responsep
+                                              (setf (http-method http) (parser-method parser)))))
+                                   (if header-callback
+                                       #'headers-complete-cb-with-callback
+                                       #'headers-complete-cb))
+               :url (named-lambda url-cb (parser data start end)
+                      (declare (ignore parser)
+                               (type simple-byte-vector data))
+                      (setf (http-resource http)
+                            (babel:octets-to-string data :start start :end end)))
+               :body (and body-callback
+                          (named-lambda body-cb (parser data start end)
+                            (declare (ignore parser)
+                                     (type simple-byte-vector data))
+                            (incf read-body-length (- end start))
+                            (funcall body-bytes (make-byte-vector-subseq data start end))))
+               :message-complete (named-lambda message-complete-cb (parser)
+                                   (declare (ignore parser))
+                                   (collect-prev-header-value)
+                                   (when (and (http-store-body http)
+                                              (null (http-body http)))
+                                     (setf (http-body http)
+                                           (byte-vector-subseqs-to-byte-vector body-bytes
                                                                                read-body-length)))
-                                 (when (http-store-body http)
-                                   (setf (http-body http) body))
-                                 (funcall body-callback body))))
-                            (T
-                             ;; No Content-Length, no chunking, probably a request with no body
-                             ))))
-             :message-complete (named-lambda message-complete-cb (parser)
-                                 (declare (ignore parser))
-                                 (when (and (http-store-body http)
-                                            (null (http-body http)))
-                                   (setf (http-body http)
-                                         (byte-vector-subseqs-to-byte-vector body-bytes
-                                                                             read-body-length)))
-                                 (setq completep t)))))
+                                   (setq completedp t))))))
     (setf (http-store-body http) store-body)
     (return-from make-parser
       (named-lambda http-parser-execute (data)
         (cond
           ((eql data :eof)
            (when finish-callback
-             (funcall finish-callback)))
+             (funcall (the function finish-callback))))
           (T (http-parse parser callbacks (the simple-byte-vector data))
-             (when (and completep finish-callback)
-               (funcall finish-callback))))
-        (values http header-complete-p completep)))))
+             (when (and body-callback header-complete-p)
+               ;; body-callback
+               (cond
+                 (chunked
+                  (let ((body (funcall body-bytes)))
+                    (funcall body-callback (byte-vector-subseqs-to-byte-vector body
+                                                                               read-body-length))
+                    (when (http-store-body http)
+                      (setf (http-body http)
+                            (if (http-body http)
+                                (append-byte-vectors (http-body http) body)
+                                body))))
+                  (setq body-bytes (make-collector)))
+                 ((numberp content-length)
+                  (when (<= content-length read-body-length)
+                    (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
+                                                                    read-body-length)))
+                      (when (http-store-body http)
+                        (setf (http-body http) body))
+                      (funcall body-callback body))))
+                 (T
+                  ;; No Content-Length, no chunking, probably a request with no body
+                  (setf completedp t))))
+             (when (and completedp finish-callback)
+               (funcall (the function finish-callback)))))
+        (values http header-complete-p completedp)))))
