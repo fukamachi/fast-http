@@ -4,6 +4,23 @@ This is a fast HTTP request/response protocol parser for Common Lisp.
 
 ## Usage
 
+The API is quite similar to [http-parse](https://github.com/orthecreedence/http-parse).
+
+```common-lisp
+(let* ((http (make-http-request))
+       (parser (make-parser http
+                            :header-callback (lambda (headers)
+                                               (my-app:got-headers!!! headers))
+                            :body-callback (lambda (bytes)
+                                             (my-app:got-body-piece bytes)))))
+  (loop for http-data = (my-app:get-http-data-from-request-i-sent-out-earlier) do
+    (multiple-value-bind (http headers-finished-p body-finished-p)
+        (funcall parser http-data)
+      (when body-finished-p
+        (my-app:close-http-stream))
+      ...)))
+```
+
 ## Installation
 
 Until this library will be available on [Quicklisp](http://www.quicklisp.org/beta/), download this from GitHub.

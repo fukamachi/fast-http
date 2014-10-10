@@ -76,6 +76,7 @@
 (in-package :fast-http)
 
 (defstruct http
+  "Base structure class extended by HTTP-REQUEST and HTTP-RESPONSE."
   version
   headers
   store-body
@@ -83,15 +84,18 @@
 
 (defstruct (http-request (:include http)
                          (:conc-name #.(string :HTTP-)))
+  "Structure class holds values specific to an HTTP request (method, resource)."
   method
   resource)
 
 (defstruct (http-response (:include http)
                           (:conc-name #.(string :HTTP-)))
+  "Structure class holds values specific to an HTTP response (status, status-text)"
   status
   status-text)
 
 (defun make-parser (http &key header-callback body-callback finish-callback store-body)
+  "Returns a lambda function that takes a simple-byte-vector and parses it as an HTTP request/response."
   (declare (optimize (speed 3) (safety 2)))
   (let* ((header-value-collector nil)
          (current-len 0)
