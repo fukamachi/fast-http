@@ -23,9 +23,13 @@
            :make-http-response
            :http-version
            :http-headers
+           :http-store-body
+           :http-force-stream
            :http-body
            :http-method
            :http-resource
+           :http-status
+           :http-status-text
 
            ;; Low-level parser API
            :http-parse
@@ -80,6 +84,7 @@
   version
   headers
   store-body
+  force-stream
   body)
 
 (defstruct (http-request (:include http)
@@ -173,22 +178,18 @@
                                (cond
                                  (header-callback #'parse-header-value)
                                  (body-callback #'parse-header-value-only-some-headers)))
-               :headers-complete (labels ((headers-complete-cb-with-callback (parser)
-                                            (headers-complete-cb parser)
-                                            (collect-prev-header-value)
-                                            (setq header-value-collector nil)
-                                            (setf (http-headers http) headers)
-                                            (funcall (the function header-callback) headers))
-                                          (headers-complete-cb (parser)
-                                            (setq header-complete-p t)
-                                            (setf (http-version http)
-                                                  (+ (parser-http-major parser)
-                                                     (/ (parser-http-minor parser) 10)))
-                                            (unless responsep
-                                              (setf (http-method http) (parser-method parser)))))
-                                   (if header-callback
-                                       #'headers-complete-cb-with-callback
-                                       #'headers-complete-cb))
+               :headers-complete (named-lambda headers-complete-cb-with-callback (parser)
+                                   (setq header-complete-p t)
+                                   (setf (http-version http)
+                                         (+ (parser-http-major parser)
+                                            (/ (parser-http-minor parser) 10)))
+                                   (unless responsep
+                                     (setf (http-method http) (parser-method parser)))
+                                   (collect-prev-header-value)
+                                   (setq header-value-collector nil)
+                                   (setf (http-headers http) headers)
+                                   (when header-callback
+                                     (funcall (the function header-callback) headers)))
                :url (named-lambda url-cb (parser data start end)
                       (declare (ignore parser)
                                (type simple-byte-vector data))
@@ -231,15 +232,21 @@
                                 body))))
                   (setq body-bytes (make-collector)))
                  ((numberp content-length)
-                  (when (<= content-length read-body-length)
-                    (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
-                                                                    read-body-length)))
-                      (when (http-store-body http)
-                        (setf (http-body http) body))
-                      (funcall body-callback body))))
+                  (if (http-force-stream http)
+                      (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
+                                                                      read-body-length)))
+                        (funcall body-callback body)
+                        (setq body-bytes (make-collector)))
+                      (if (<= content-length read-body-length)
+                          (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
+                                                                          read-body-length)))
+                            (when (http-store-body http)
+                              (setf (http-body http) body))
+                            (funcall body-callback body))
+                          (return-from http-parser-execute nil))))
                  (T
                   ;; No Content-Length, no chunking, probably a request with no body
-                  (setf completedp t))))
+                  (setq completedp t))))
              (when (and completedp finish-callback)
                (funcall (the function finish-callback)))))
         (values http header-complete-p completedp)))))

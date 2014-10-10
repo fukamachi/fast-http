@@ -465,4 +465,22 @@
              nil
              "no Content-Length response")
 
+
+;;
+;; Others
+
+(let ((req (make-http-request)))
+  (is (funcall (make-parser req
+                            :body-callback (lambda (body)
+                                             (declare (ignore body))
+                                             (error "No body")))
+               (bv (str #?"POST / HTTP/1.1\r\n"
+                        #?"Host: www.example.com\r\n"
+                        #?"Content-Type: application/x-www-form-urlencoded\r\n"
+                        #?"Content-Length: 8\r\n"
+                        #?"\r\n"
+                        #?"q=42\r\n")))
+      nil
+      "Return NIL when the body length is less than content-length"))
+
 (finalize)
