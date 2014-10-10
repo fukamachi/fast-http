@@ -6,7 +6,8 @@
         :fast-http.subseqs
         :fast-http.error)
   (:import-from :fast-http.util
-                :make-collector)
+                :make-collector
+                :number-string-p)
   (:import-from :babel
                 :octets-to-string)
   (:import-from :cl-utilities
@@ -107,7 +108,10 @@
                                     (let ((header-value
                                             (byte-vector-subseqs-to-string (funcall header-value-collector)
                                                                            current-len)))
-                                      (headers header-value)))
+                                      (headers
+                                       (if (number-string-p header-value)
+                                           (read-from-string header-value)
+                                           header-value))))
                                   (setq header-value-collector (make-collector))
                                   (setq current-len 0)
                                   (headers (intern (ascii-octets-to-upper-string data :start start :end end)

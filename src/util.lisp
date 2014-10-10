@@ -3,6 +3,8 @@
   (:use :cl)
   (:import-from :fast-http.error
                 :strict-error)
+  (:import-from :cl-ppcre
+                :scan)
   (:import-from :alexandria
                 :once-only
                 :ensure-list)
@@ -12,7 +14,8 @@
            :casev
            :tagcase
            :tagcasev
-           :make-collector))
+           :make-collector
+           :number-string-p))
 (in-package :fast-http.util)
 
 (defmacro check-strictly (form)
@@ -83,3 +86,7 @@
           (unless (eq data none)
             (buffer data))
           buffer)))))
+
+(defun number-string-p (string)
+  (declare (type string string))
+  (not (null (ppcre:scan "^(?:\\d*[.])?\\d+$" string))))

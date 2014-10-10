@@ -18,6 +18,7 @@
   :depends-on (:alexandria
                :cl-utilities
                :babel
+               :cl-ppcre
                :log4cl)
   :components ((:module "src"
                 :components
