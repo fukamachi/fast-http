@@ -12,7 +12,8 @@
                 :decoder)
   (:export :octets-to-string-into-string
            :make-byte-vector-subseq
-           :byte-vector-subseqs-to-string))
+           :byte-vector-subseqs-to-string
+           :byte-vector-subseqs-to-byte-vector))
 (in-package :fast-http.subseqs)
 
 (defun octets-to-string-into-string (string vector &key (start1 0) (start2 0) end2
@@ -33,17 +34,31 @@
   (end 0 :type integer))
 
 (defun byte-vector-subseqs-to-string (subseqs length &key (encoding *default-character-encoding*))
-  (declare (optimize (speed 3) (safety 0)))
+  (declare (optimize (speed 3) (safety 2)))
   (let* ((string (make-string length :element-type 'babel::unicode-char))
          (current-pos 0))
     (loop for subseq in subseqs
           do (setq current-pos
                    (nth-value 1
-                              (octets-to-string-into-string (the string string)
-                                                            (the simple-byte-vector
-                                                                 (byte-vector-subseq-data subseq))
+                              (octets-to-string-into-string string
+                                                            (byte-vector-subseq-data subseq)
                                                             :start1 current-pos
                                                             :start2 (byte-vector-subseq-start subseq)
                                                             :end2 (byte-vector-subseq-end subseq)
                                                             :encoding encoding))))
     string))
+
+(defun byte-vector-subseqs-to-byte-vector (subseqs length)
+  (declare (optimize (speed 3) (safety 2)))
+  (let ((result (make-array length :element-type '(unsigned-byte 8))))
+    (declare (type simple-byte-vector result))
+    (loop with current-pos of-type integer = 0
+          for subseq in subseqs
+          do (replace result (byte-vector-subseq-data subseq)
+                      :start1 current-pos
+                      :start2 (byte-vector-subseq-start subseq)
+                      :end2 (byte-vector-subseq-end subseq))
+          (incf current-pos
+                (- (byte-vector-subseq-end subseq)
+                   (byte-vector-subseq-start subseq))))
+    result))
