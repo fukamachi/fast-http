@@ -143,6 +143,13 @@ $ bench
 Elapsed 0.456435 seconds.
 ```
 
+## TODO
+
+Although fast-http is intended to be the replacement of [http-parse](https://github.com/orthecreedence/http-parse), there's still some not implemented features.
+
+- Multipart parser
+- Force streaming
+
 ## Author
 
 * Eitaro Fukamachi (e.arrows@gmail.com)
