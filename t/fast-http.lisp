@@ -29,20 +29,20 @@
 (subtest "Header overflow error (request)"
   (let ((parser (make-ll-parser :type :request))
         (buf (bv #?"header-key: header-value\r\n")))
-    (http-parse parser (make-parser-callbacks)
+    (http-parse parser (make-ll-callbacks)
                 (bv #?"GET / HTTP/1.1\r\n"))
     (is-error (dotimes (i 10000)
-                (http-parse parser (make-parser-callbacks)
+                (http-parse parser (make-ll-callbacks)
                             buf))
               'header-overflow)))
 
 (subtest "Header overflow error (response)"
   (let ((parser (make-ll-parser :type :response))
         (buf (bv #?"header-key: header-value\r\n")))
-    (http-parse parser (make-parser-callbacks)
+    (http-parse parser (make-ll-callbacks)
                 (bv #?"HTTP/1.0 200 OK\r\n"))
     (is-error (dotimes (i 10000)
-                (http-parse parser (make-parser-callbacks) buf))
+                (http-parse parser (make-ll-callbacks) buf))
               'header-overflow)))
 
 (subtest "No overflow for a long body"
@@ -55,11 +55,11 @@
                       (:response
                        (bv #?"HTTP/1.0 200 OK\r\nConnection: Keep-Alive\r\nContent-Length: ${length}\r\n\r\n"))))
                   (buf (bv header :length 3000)))
-             (is (http-parse parser (make-parser-callbacks)
+             (is (http-parse parser (make-ll-callbacks)
                              buf :end (length header))
                  (length header))
              (dotimes (i length)
-               (http-parse parser (make-parser-callbacks)
+               (http-parse parser (make-ll-callbacks)
                            (bv "a"))))))
     (run-test :request 1000)
     (run-test :request 100000)
@@ -69,7 +69,7 @@
 
 (defun test-simple (&rest objects)
   (let ((parser (make-ll-parser)))
-    (http-parse parser (make-parser-callbacks)
+    (http-parse parser (make-ll-callbacks)
                 (bv (apply #'concatenate 'string objects)))
     parser))
 
@@ -78,7 +78,7 @@
          (headers '())
          url
          (body "")
-         (callbacks (make-parser-callbacks
+         (callbacks (make-ll-callbacks
                     :headers-complete (lambda (parser)
                                         (setf info
                                               (list :method (parser-method parser)

@@ -11,9 +11,10 @@
                 :when-let
                 :with-gensyms)
   (:export :http-parse
-           :parser
+           :ll-parser
+           :ll-callbacks
            :make-ll-parser
-           :make-parser-callbacks
+           :make-ll-callbacks
            :parser-method
            :parser-status-code
            :parser-http-major
@@ -38,13 +39,14 @@
 ;;
 ;; Data types
 
-(defstruct (parser (:constructor make-ll-parser (&key
-                                                   (type :both)
-                                                 &aux
-                                                   (state (case type
-                                                            (:request +state-start-req+)
-                                                            (:response +state-start-res+)
-                                                            (otherwise +state-start-req-or-res+))))))
+(defstruct (ll-parser (:constructor make-ll-parser (&key
+                                                      (type :both)
+                                                    &aux
+                                                      (state (case type
+                                                               (:request +state-start-req+)
+                                                               (:response +state-start-res+)
+                                                               (otherwise +state-start-req-or-res+)))))
+                      (:conc-name :parser-))
   (type :both :type keyword)
   (flags 6 :type fixnum)
   (state -1 :type fixnum)
@@ -66,7 +68,7 @@
 (defun parser-state-name (parser)
   (princ-to-string (aref +state-map+ (parser-state parser))))
 
-(defstruct parser-callbacks
+(defstruct ll-callbacks
   (message-begin nil :type (or null function))     ;; 1 arg
   (url nil :type (or null function))
   (status nil :type (or null function))
@@ -209,7 +211,7 @@
 
 (defmacro callback-notify (parser callbacks callback-name)
   (with-gensyms (callback e)
-    `(when-let (,callback (,(intern (format nil "~A-~A" :parser-callbacks callback-name)) ,callbacks))
+    `(when-let (,callback (,(intern (format nil "~A-~A" :ll-callbacks callback-name)) ,callbacks))
        (handler-case (values (funcall ,callback ,parser) T)
          (error (,e)
            (error ',(intern (format nil "~A-~A" :cb callback-name))
@@ -218,7 +220,7 @@
 (defmacro callback-data (parser callbacks callback-name data mark end)
   (with-gensyms (callback start e)
     `(when-let (,start (,(intern (format nil "~A-~A" :mark callback-name)) ,mark))
-       (when-let (,callback (,(intern (format nil "~A-~A" :parser-callbacks callback-name)) ,callbacks))
+       (when-let (,callback (,(intern (format nil "~A-~A" :ll-callbacks callback-name)) ,callbacks))
          (handler-case (funcall ,callback ,parser ,data ,start ,end)
            (error (,e)
              (error ',(intern (format nil "~A-~A" :cb callback-name))

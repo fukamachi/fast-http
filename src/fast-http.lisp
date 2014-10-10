@@ -27,9 +27,10 @@
 
            ;; Low-level parser API
            :http-parse
-           :parser
+           :ll-parser
+           :ll-callbacks
            :make-ll-parser
-           :make-parser-callbacks
+           :make-ll-callbacks
            :parser-method
            :parser-status-code
            :parser-http-major
@@ -98,7 +99,7 @@
          callbacks)
     (with-collectors (headers)
       (setq callbacks
-            (make-parser-callbacks
+            (make-ll-callbacks
              :status (and responsep
                           (named-lambda status-cb (parser data start end)
                             (declare (type simple-byte-vector data))
