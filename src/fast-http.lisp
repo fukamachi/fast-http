@@ -133,18 +133,23 @@
                                   (incf current-len (- end start))
                                   (funcall (the function header-value-collector)
                                            (make-byte-vector-subseq data start end))))
-             :headers-complete (and header-callback
-                                    (named-lambda headers-complete-cb (parser)
-                                      (setf (http-version http)
-                                            (+ (parser-http-major parser)
-                                               (/ (parser-http-minor parser) 10)))
-                                      (setf (http-method http) (parser-method parser))
-
-                                      ;; collecting the last header-value buffer.
-                                      (headers (byte-vector-subseqs-to-string (funcall (the function header-value-collector))
-                                                                              current-len))
-                                      (setf (http-headers http) headers)
-                                      (funcall (the function header-callback) headers)))
+             :headers-complete (labels ((headers-complete-cb-with-callback (parser)
+                                          (headers-complete-cb parser)
+                                          ;; collecting the last header-value buffer.
+                                          (headers
+                                           (byte-vector-subseqs-to-string
+                                            (funcall (the function header-value-collector))
+                                            current-len))
+                                          (setf (http-headers http) headers)
+                                          (funcall (the function header-callback) headers))
+                                        (headers-complete-cb (parser)
+                                          (setf (http-version http)
+                                                (+ (parser-http-major parser)
+                                                   (/ (parser-http-minor parser) 10)))
+                                          (setf (http-method http) (parser-method parser))))
+                                 (if header-callback
+                                     #'headers-complete-cb-with-callback
+                                     #'headers-complete-cb))
              :url (named-lambda url-cb (parser data start end)
                     (declare (ignore parser)
                              (type simple-byte-vector data))
