@@ -17,8 +17,10 @@
   (:export :make-parser
            :http
            :http-request
+           :http-response
            :make-http
            :make-http-request
+           :make-http-response
            :http-version
            :http-headers
            :http-body
