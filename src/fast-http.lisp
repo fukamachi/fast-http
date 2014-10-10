@@ -87,27 +87,32 @@
   status-text)
 
 (defun make-parser (http &key header-callback body-callback finish-callback store-body)
+  (declare (optimize (speed 3) (safety 2)))
   (let* ((header-value-collector nil)
          (current-len 0)
          (completep nil)
-         (parser (make-ll-parser))
+         (responsep (http-response-p http))
+         (parser (make-ll-parser :type (if responsep :response :request)))
          callbacks)
     (with-collectors (headers)
       (setq callbacks
             (make-parser-callbacks
-             :status (and (http-response-p http)
+             :status (and responsep
                           (lambda (parser data start end)
+                            (declare (type simple-byte-vector data))
                             (setf (http-status http)
                                   (parser-status-code parser))
                             (setf (http-status-text http)
                                   (babel:octets-to-string data :start start :end end))))
              :header-field (and header-callback
                                 (lambda (parser data start end)
-                                  (declare (ignore parser))
+                                  (declare (ignore parser)
+                                           (type simple-byte-vector data))
                                   (when header-value-collector
                                     (let ((header-value
-                                            (byte-vector-subseqs-to-string (funcall header-value-collector)
-                                                                           current-len)))
+                                            (byte-vector-subseqs-to-string
+                                             (funcall (the function header-value-collector))
+                                             current-len)))
                                       (headers
                                        (if (number-string-p header-value)
                                            (read-from-string header-value)
@@ -118,9 +123,11 @@
                                                    :keyword))))
              :header-value (and header-callback
                                 (lambda (parser data start end)
-                                  (declare (ignore parser))
+                                  (declare (ignore parser)
+                                           (type simple-byte-vector data))
                                   (incf current-len (- end start))
-                                  (funcall header-value-collector (make-byte-vector-subseq data start end))))
+                                  (funcall (the function header-value-collector)
+                                           (make-byte-vector-subseq data start end))))
              :headers-complete (and header-callback
                                     (lambda (parser)
                                       (setf (http-version http)
@@ -129,21 +136,23 @@
                                       (setf (http-method http) (parser-method parser))
 
                                       ;; collecting the last header-value buffer.
-                                      (headers (byte-vector-subseqs-to-string (funcall header-value-collector)
+                                      (headers (byte-vector-subseqs-to-string (funcall (the function header-value-collector))
                                                                               current-len))
                                       (setf (http-headers http) headers)
-                                      (funcall header-callback headers)))
+                                      (funcall (the function header-callback) headers)))
              :url (lambda (parser data start end)
-                    (declare (ignore parser))
+                    (declare (ignore parser)
+                             (type simple-byte-vector data))
                     (setf (http-resource http)
                           (babel:octets-to-string data :start start :end end)))
              :body (and body-callback
                         (lambda (parser data start end)
-                          (declare (ignore parser))
+                          (declare (ignore parser)
+                                   (type simple-byte-vector data))
                           (let ((body-bytes (subseq data start end)))
                             (when store-body
                               (setf (http-body http) store-body))
-                            (funcall body-callback body-bytes))))
+                            (funcall (the function body-callback) body-bytes))))
              :message-complete (lambda (parser)
                                  (declare (ignore parser))
                                  (setq completep t)))))
@@ -153,8 +162,8 @@
         (cond
           ((eql data :eof)
            (when finish-callback
-             (funcall finish-callback)))
-          (T (http-parse parser callbacks data)
+             (funcall (the function finish-callback))))
+          (T (http-parse parser callbacks (the simple-byte-vector data))
              (when (and completep finish-callback)
-               (funcall finish-callback))))
+               (funcall (the function finish-callback)))))
         (values http t completep)))))
