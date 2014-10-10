@@ -12,6 +12,8 @@
                 :octets-to-string)
   (:import-from :cl-utilities
                 :with-collectors)
+  (:import-from :alexandria
+                :named-lambda)
   (:export :make-parser
            :http
            :http-request
@@ -98,14 +100,14 @@
       (setq callbacks
             (make-parser-callbacks
              :status (and responsep
-                          (lambda (parser data start end)
+                          (named-lambda status-cb (parser data start end)
                             (declare (type simple-byte-vector data))
                             (setf (http-status http)
                                   (parser-status-code parser))
                             (setf (http-status-text http)
                                   (babel:octets-to-string data :start start :end end))))
              :header-field (and header-callback
-                                (lambda (parser data start end)
+                                (named-lambda header-field-cb (parser data start end)
                                   (declare (ignore parser)
                                            (type simple-byte-vector data))
                                   (when header-value-collector
@@ -122,14 +124,14 @@
                                   (headers (intern (ascii-octets-to-upper-string data :start start :end end)
                                                    :keyword))))
              :header-value (and header-callback
-                                (lambda (parser data start end)
+                                (named-lambda header-value-cb (parser data start end)
                                   (declare (ignore parser)
                                            (type simple-byte-vector data))
                                   (incf current-len (- end start))
                                   (funcall (the function header-value-collector)
                                            (make-byte-vector-subseq data start end))))
              :headers-complete (and header-callback
-                                    (lambda (parser)
+                                    (named-lambda headers-complete-cb (parser)
                                       (setf (http-version http)
                                             (+ (parser-http-major parser)
                                                (/ (parser-http-minor parser) 10)))
@@ -140,25 +142,25 @@
                                                                               current-len))
                                       (setf (http-headers http) headers)
                                       (funcall (the function header-callback) headers)))
-             :url (lambda (parser data start end)
+             :url (named-lambda url-cb (parser data start end)
                     (declare (ignore parser)
                              (type simple-byte-vector data))
                     (setf (http-resource http)
                           (babel:octets-to-string data :start start :end end)))
              :body (and body-callback
-                        (lambda (parser data start end)
+                        (named-lambda body-cb (parser data start end)
                           (declare (ignore parser)
                                    (type simple-byte-vector data))
                           (let ((body-bytes (subseq data start end)))
                             (when store-body
                               (setf (http-body http) store-body))
                             (funcall (the function body-callback) body-bytes))))
-             :message-complete (lambda (parser)
+             :message-complete (named-lambda message-complete-cb (parser)
                                  (declare (ignore parser))
                                  (setq completep t)))))
     (setf (http-store-body http) store-body)
     (return-from make-parser
-      (lambda (data)
+      (named-lambda http-parser-execute (data)
         (cond
           ((eql data :eof)
            (when finish-callback
