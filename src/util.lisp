@@ -6,10 +6,13 @@
   (:import-from :alexandria
                 :once-only
                 :ensure-list)
+  (:import-from :cl-utilities
+                :with-collectors)
   (:export :check-strictly
            :casev
            :tagcase
-           :tagcasev))
+           :tagcasev
+           :make-collector))
 (in-package :fast-http.util)
 
 (defmacro check-strictly (form)
@@ -70,3 +73,13 @@
                 collect `(progn ,@body
                                 (go ,end)))
       ,end)))
+
+(defun make-collector ()
+  (let ((none '#:none))
+    (declare (dynamic-extent none))
+    (with-collectors (buffer)
+      (return-from make-collector
+        (lambda (&optional (data none))
+          (unless (eq data none)
+            (buffer data))
+          buffer)))))
