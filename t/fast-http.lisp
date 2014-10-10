@@ -27,7 +27,7 @@
 ;; Overflow
 
 (subtest "Header overflow error (request)"
-  (let ((parser (make-parser :type :request))
+  (let ((parser (make-ll-parser :type :request))
         (buf (bv #?"header-key: header-value\r\n")))
     (http-parse parser (make-parser-callbacks)
                 (bv #?"GET / HTTP/1.1\r\n"))
@@ -37,7 +37,7 @@
               'header-overflow)))
 
 (subtest "Header overflow error (response)"
-  (let ((parser (make-parser :type :response))
+  (let ((parser (make-ll-parser :type :response))
         (buf (bv #?"header-key: header-value\r\n")))
     (http-parse parser (make-parser-callbacks)
                 (bv #?"HTTP/1.0 200 OK\r\n"))
@@ -47,7 +47,7 @@
 
 (subtest "No overflow for a long body"
   (flet ((run-test (type length)
-           (let* ((parser (make-parser :type type))
+           (let* ((parser (make-ll-parser :type type))
                   (header
                     (ecase type
                       (:request
@@ -68,7 +68,7 @@
 
 
 (defun test-simple (&rest objects)
-  (let ((parser (make-parser)))
+  (let ((parser (make-ll-parser)))
     (http-parse parser (make-parser-callbacks)
                 (bv (apply #'concatenate 'string objects)))
     parser))
@@ -107,7 +107,7 @@
                                   (concatenate 'string
                                                body
                                                (babel:octets-to-string (subseq data start end)))))))
-         (parser (make-parser)))
+         (parser (make-ll-parser)))
     (http-parse parser callbacks
                 (bv (apply #'concatenate 'string objects)))
     (append info

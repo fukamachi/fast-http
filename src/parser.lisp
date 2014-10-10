@@ -12,7 +12,7 @@
                 :with-gensyms)
   (:export :http-parse
            :parser
-           :make-parser
+           :make-ll-parser
            :make-parser-callbacks
            :parser-method
            :parser-status-code
@@ -38,13 +38,13 @@
 ;;
 ;; Data types
 
-(defstruct (parser (:constructor make-parser (&key
-                                                (type :both)
-                                              &aux
-                                                (state (case type
-                                                         (:request +state-start-req+)
-                                                         (:response +state-start-res+)
-                                                         (otherwise +state-start-req-or-res+))))))
+(defstruct (parser (:constructor make-ll-parser (&key
+                                                   (type :both)
+                                                 &aux
+                                                   (state (case type
+                                                            (:request +state-start-req+)
+                                                            (:response +state-start-res+)
+                                                            (otherwise +state-start-req-or-res+))))))
   (type :both :type keyword)
   (flags 6 :type fixnum)
   (state -1 :type fixnum)

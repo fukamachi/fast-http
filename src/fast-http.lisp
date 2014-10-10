@@ -12,7 +12,7 @@
                 :octets-to-string)
   (:import-from :cl-utilities
                 :with-collectors)
-  (:export :make-http-parser
+  (:export :make-parser
            :http
            :http-request
            :make-http
@@ -26,7 +26,7 @@
            ;; Low-level parser API
            :http-parse
            :parser
-           :make-parser
+           :make-ll-parser
            :make-parser-callbacks
            :parser-method
            :parser-status-code
@@ -86,11 +86,11 @@
   status
   status-text)
 
-(defun make-http-parser (http &key header-callback body-callback finish-callback store-body)
+(defun make-parser (http &key header-callback body-callback finish-callback store-body)
   (let* ((header-value-collector nil)
          (current-len 0)
          (completep nil)
-         (parser (make-parser))
+         (parser (make-ll-parser))
          callbacks)
     (with-collectors (headers)
       (setq callbacks
@@ -148,7 +148,7 @@
                                  (declare (ignore parser))
                                  (setq completep t)))))
     (setf (http-store-body http) store-body)
-    (return-from make-http-parser
+    (return-from make-parser
       (lambda (data)
         (cond
           ((eql data :eof)
