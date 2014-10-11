@@ -2,7 +2,7 @@
 (defpackage fast-http-test
   (:use :cl
         :fast-http
-        :fast-http-test.util
+        :fast-http-test.test-utils
         :prove
         :babel)
   (:import-from :alexandria

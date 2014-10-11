@@ -1,9 +1,9 @@
 (in-package :cl-user)
-(defpackage fast-http-test.util
+(defpackage fast-http-test.test-utils
   (:use :cl)
   (:export :str
            :bv))
-(in-package :fast-http-test.util)
+(in-package :fast-http-test.test-utils)
 
 (defun str (&rest strings)
   (apply #'concatenate 'string strings))

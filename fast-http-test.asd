@@ -16,9 +16,9 @@
                :prove)
   :components ((:module "t"
                 :components
-                ((:test-file "parser" :depends-on ("util"))
-                 (:test-file "fast-http" :depends-on ("util"))
-                 (:file "util")
+                ((:test-file "parser" :depends-on ("test-utils"))
+                 (:test-file "fast-http" :depends-on ("test-utils"))
+                 (:file "test-utils")
                  (:file "benchmark"))))
 
   :defsystem-depends-on (:prove-asdf)

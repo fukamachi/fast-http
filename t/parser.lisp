@@ -2,7 +2,7 @@
 (defpackage fast-http-test.parser
   (:use :cl
         :fast-http
-        :fast-http-test.util
+        :fast-http-test.test-utils
         :prove
         :babel))
 (in-package :fast-http-test.parser)
