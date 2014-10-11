@@ -85,14 +85,23 @@
             (buffer data))
           buffer)))))
 
+(defun %whitespacep (char)
+  (or (char= char #\Space)
+      (char= char #\Tab)))
+
 (defun number-string-p (string)
   (declare (type string string)
            (optimize (speed 3) (safety 2)))
-  (let ((end (length string))
+  ;; empty string
+  (when (zerop (length string))
+    (return-from number-string-p nil))
+  (let ((end (position-if-not #'%whitespacep string :from-end t))
         (dot-read-p nil))
-    (when (zerop end)
+    ;; spaces string
+    (when (null end)
       (return-from number-string-p nil))
-    (do ((i 0 (1+ i)))
+    (incf end)
+    (do ((i (or (position-if-not #'%whitespacep string) 0) (1+ i)))
         ((= i end) T)
       (let ((char (aref string i)))
         (declare (type character char))
@@ -104,6 +113,4 @@
            (when dot-read-p
              (return-from number-string-p nil))
            (setq dot-read-p t))
-          ((or (char= char #\Space)
-               (char= char #\Tab)))
           (T (return-from number-string-p nil)))))))
