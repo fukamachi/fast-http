@@ -23,6 +23,7 @@
                 :components
                 ((:file "fast-http" :depends-on ("parser" "byte-vector" "error" "subseqs"))
                  (:file "parser"  :depends-on ("byte-vector" "url" "variables" "error" "util"))
+                 (:file "multipart-parser" :depends-on ("parser" "byte-vector" "error"))
                  (:file "byte-vector")
                  (:file "subseqs" :depends-on ("byte-vector"))
                  (:file "url" :depends-on ("variables" "util"))

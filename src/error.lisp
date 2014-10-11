@@ -34,7 +34,11 @@
            :invalid-internal-state
            :strict-error
            :paused-error
-           :unknown-error))
+           :unknown-error
+
+           :multipart-parsing-error
+           :invalid-multipart-body
+           :invalid-boundary))
 (in-package :fast-http.error)
 
 (define-condition fast-http-error (simple-error)
@@ -144,3 +148,14 @@
   ((description :initform "parser is paused")))
 (define-condition unknown-error (parsing-error)
   ((description :initform "an unknown error occured")))
+
+
+;;
+;; Multipart parsing
+
+(define-condition multipart-parsing-error (fast-http-error) ())
+
+(define-condition invalid-multipart-body (multipart-parsing-error)
+  ((description :initform "invalid multipart body")))
+(define-condition invalid-boundary (multipart-parsing-error)
+  ((description :initform "invalid boundary")))

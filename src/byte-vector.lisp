@@ -8,6 +8,7 @@
            :+space+
            :+tab+
            :+page+
+           :+dash+
            :+crlf+
 
            :simple-byte-vector
@@ -28,6 +29,7 @@
 (defconstant +space+ (char-code #\Space))
 (defconstant +tab+ (char-code #\Tab))
 (defconstant +page+ (char-code #\Page))
+(defparameter +dash+ #.(char-code #\-))
 
 (define-constant +crlf+
   (make-array 2 :element-type '(unsigned-byte 8)

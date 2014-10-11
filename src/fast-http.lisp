@@ -42,6 +42,10 @@
            :parser-http-major
            :parser-http-minor
 
+           :http-multipart-parse
+           :ll-multipart-parser
+           :make-ll-multipart-parser
+
            ;; Error
            :fast-http-error
 
@@ -76,7 +80,11 @@
            :invalid-internal-state
            :strict-error
            :paused-error
-           :unknown-error))
+           :unknown-error
+
+           :multipart-parsing-error
+           :invalid-multipart-body
+           :invalid-boundary))
 (in-package :fast-http)
 
 (defstruct http
