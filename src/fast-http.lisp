@@ -84,7 +84,12 @@
 
            :multipart-parsing-error
            :invalid-multipart-body
-           :invalid-boundary))
+           :invalid-boundary
+
+           :header-value-parsing-error
+           :invalid-header-value
+           :invalid-parameter-key
+           :invalid-parameter-value))
 (in-package :fast-http)
 
 (defstruct http

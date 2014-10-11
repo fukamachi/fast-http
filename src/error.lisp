@@ -38,7 +38,12 @@
 
            :multipart-parsing-error
            :invalid-multipart-body
-           :invalid-boundary))
+           :invalid-boundary
+
+           :header-value-parsing-error
+           :invalid-header-value
+           :invalid-parameter-key
+           :invalid-parameter-value))
 (in-package :fast-http.error)
 
 (define-condition fast-http-error (simple-error)
@@ -159,3 +164,16 @@
   ((description :initform "invalid multipart body")))
 (define-condition invalid-boundary (multipart-parsing-error)
   ((description :initform "invalid boundary")))
+
+
+;;
+;; Header value parsing
+
+(define-condition header-value-parsing-error (fast-http-error) ())
+
+(define-condition invalid-header-value (header-value-parsing-error)
+  ((description :initform "invalid header value")))
+(define-condition invalid-parameter-key (header-value-parsing-error)
+  ((description :initform "invalid parameter key")))
+(define-condition invalid-parameter-value (header-value-parsing-error)
+  ((description :initform "invalid parameter value")))

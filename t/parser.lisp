@@ -2,6 +2,7 @@
 (defpackage fast-http-test.parser
   (:use :cl
         :fast-http
+        :fast-http.parser
         :fast-http-test.test-utils
         :prove
         :babel))
@@ -1180,5 +1181,71 @@
       :headers ()
       :body "")
     "empty reason phrase after space")
+
+
+;;
+;; parse-header-value-parameters
+
+(defun test-parse-header-parameters (data expected &optional description)
+  (let (header-value
+        parameters)
+    (parse-header-value-parameters data
+                                   :header-value-callback
+                                   (lambda (data start end)
+                                     (setq header-value (subseq data start end)))
+                                   :header-parameter-key-callback
+                                   (lambda (data start end)
+                                     (push (subseq data start end)
+                                           parameters))
+                                   :header-parameter-value-callback
+                                   (lambda (data start end)
+                                     (push (subseq data start end)
+                                           parameters)))
+    (is (list header-value (nreverse parameters))
+        expected
+        description)))
+
+(test-parse-header-parameters "none"
+                              '("none" ())
+                              "no parameters")
+
+(test-parse-header-parameters "none;"
+                              '("none" ())
+                              "no parameters")
+
+(test-parse-header-parameters "form-data; name=\"key\""
+                              '("form-data" ("name" "key"))
+                              "quoted-string value")
+
+(test-parse-header-parameters "form-data; name=key"
+                              '("form-data" ("name" "key"))
+                              "tokens value")
+
+(test-parse-header-parameters "form-data; name=key;"
+                              '("form-data" ("name" "key"))
+                              "ends with a needless semi-colon")
+
+(is-error (test-parse-header-parameters "form-data; name=\"key" nil)
+          'invalid-eof-state
+          "Unexpected EOF when parsing a quoted-string")
+
+(test-parse-header-parameters #?"form-data; name=\"key\nmultiline\""
+                              '("form-data" ("name" #?"key\nmultiline"))
+                              "multiline")
+
+(test-parse-header-parameters #?"form-data; name=\"フィールド1\""
+                              '("form-data" ("name" #?"フィールド1"))
+                              "utf-8")
+
+(test-parse-header-parameters #?"form-data; name=\"upload1\"; filename=\"file.txt\""
+                              '("form-data" ("name" "upload1"
+                                             "filename" "file.txt"))
+                              "multiple parameters")
+
+(test-parse-header-parameters #?"gzip;q=1.0, identity; q=0.5, *;q=0"
+                              '("gzip" ("q" "1.0, identity"
+                                        "q" "0.5, *"
+                                        "q" "0"))
+                              "Accept-Encoding")
 
 (finalize)
