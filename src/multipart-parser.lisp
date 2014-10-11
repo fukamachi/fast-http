@@ -11,7 +11,8 @@
                 :parser-state)
   (:import-from :fast-http.util
                 :check-strictly
-                :tagcasev)
+                :tagcasev
+                :casev)
   (:import-from :babel
                 :string-to-octets)
   (:import-from :alexandria
@@ -33,7 +34,7 @@
   body-mark
   boundary-mark)
 
-#.`(progn
+#.`(eval-when (:compile-toplevel :load-toplevel :execute)
      ,@(loop for i from 0
              for state in '(parsing-delimiter-dash-start
                             parsing-delimiter-dash
