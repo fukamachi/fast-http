@@ -21,6 +21,15 @@ The API is quite similar to [http-parse](https://github.com/orthecreedence/http-
       ...)))
 ```
 
+## API differences from http-parse
+
+* `http`, `http-request` and `http-response` are structure classes, not standard classes.
+* `body-callback` for `make-parser` and `make-multipart-parser` doesn't take a flag `body-complete-p`.
+  * Use `finish-callback` to know if the parsing is finished.
+* Raises errors aggressively while parsing.
+  * Handle `fast-http-error` as you needed.
+* `make-parser` doesn't take `multipart-callback` (it's on my TODO list).
+
 ## Installation
 
 Until this library will be available on [Quicklisp](http://www.quicklisp.org/beta/), download this from GitHub.

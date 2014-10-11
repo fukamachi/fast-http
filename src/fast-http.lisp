@@ -118,6 +118,7 @@
   status
   status-text)
 
+;; TODO: multipart-callback
 (defun make-parser (http &key header-callback body-callback finish-callback store-body)
   "Returns a lambda function that takes a simple-byte-vector and parses it as an HTTP request/response."
   (declare (optimize (speed 3) (safety 2)))
