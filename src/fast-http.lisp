@@ -2,9 +2,13 @@
 (defpackage fast-http
   (:use :cl
         :fast-http.parser
+        :fast-http.multipart-parser
         :fast-http.byte-vector
         :fast-http.subseqs
         :fast-http.error)
+  (:import-from :fast-http.multipart-parser
+                :ll-multipart-parser-state
+                :+body-done+)
   (:import-from :fast-http.util
                 :make-collector
                 :number-string-p)
@@ -30,6 +34,8 @@
            :http-resource
            :http-status
            :http-status-text
+
+           :make-multipart-parser
 
            ;; Low-level parser API
            :http-parse
@@ -263,3 +269,86 @@
              (when (and completedp finish-callback)
                (funcall (the function finish-callback)))))
         (values http header-complete-p completedp)))))
+
+(defun find-boundary (content-type)
+  (declare (type string content-type))
+  (let ((parsing-boundary nil))
+    (parse-header-value-parameters content-type
+                                   :header-value-callback
+                                   (lambda (data start end)
+                                     (unless (string= data "multipart/form-data"
+                                                      :start1 start :end1 end)
+                                       (return-from find-boundary nil)))
+                                   :header-parameter-key-callback
+                                   (lambda (data start end)
+                                     (when (string= data "boundary"
+                                                    :start1 start :end1 end)
+                                       (setq parsing-boundary t)))
+                                   :header-parameter-value-callback
+                                   (lambda (data start end)
+                                     (when parsing-boundary
+                                       (return-from find-boundary (subseq data start end)))))))
+
+(defun make-multipart-parser (content-type callback)
+  (check-type content-type string)
+  (let ((boundary (find-boundary content-type)))
+    (unless boundary
+      (return-from make-multipart-parser nil))
+
+    (let ((parser (make-ll-multipart-parser :boundary boundary))
+          (current-len 0)
+          (headers-collector (make-collector))
+          parsing-content-disposition
+          field-meta
+          header-value-collector
+          callbacks)
+      (flet ((collect-prev-header-value ()
+               (when header-value-collector
+                 (let ((header-value
+                         (byte-vector-subseqs-to-string
+                          (funcall (the function header-value-collector))
+                          current-len)))
+                   (when parsing-content-disposition
+                     (setq field-meta
+                           (with-collectors (field-meta)
+                             (parse-header-value-parameters header-value
+                                                            :header-parameter-key-callback
+                                                            (lambda (data start end)
+                                                              (field-meta (intern (string-upcase (subseq data start end))
+                                                                                  :keyword)))
+                                                            :header-parameter-value-callback
+                                                            (lambda (data start end)
+                                                              (field-meta (subseq data start end)))))))
+                   (funcall headers-collector header-value)))))
+        (setq callbacks
+              (make-ll-callbacks
+               :header-field (lambda (parser data start end)
+                               (declare (ignore parser))
+                               (collect-prev-header-value)
+                               (setq header-value-collector (make-collector))
+                               (setq current-len 0)
+
+                               (let ((header-name
+                                       (intern (ascii-octets-to-upper-string data :start start :end end)
+                                               :keyword)))
+                                 (setq parsing-content-disposition
+                                       (eq header-name :content-disposition))
+                                 (funcall headers-collector header-name)))
+               :header-value (lambda (parser data start end)
+                               (declare (ignore parser))
+                               (incf current-len (- end start))
+                               (funcall header-value-collector
+                                        (make-byte-vector-subseq data start end)))
+               :body (lambda (parser data start end)
+                       (declare (ignore parser))
+                       (collect-prev-header-value)
+                       (funcall callback
+                                (getf field-meta :name)
+                                (funcall headers-collector)
+                                field-meta
+                                (subseq data start end))
+                       (setq headers-collector (make-collector)
+                             header-value-collector nil)))))
+      (lambda (data)
+        (http-multipart-parse parser callbacks data)
+        (= (ll-multipart-parser-state parser) +body-done+)))))
