@@ -3,6 +3,7 @@
   (:use :cl
         :fast-http.http
         :fast-http.parser
+        :fast-http.unparser
         :fast-http.multipart-parser
         :fast-http.byte-vector
         :fast-http.subseqs
@@ -54,6 +55,9 @@
            :http-multipart-parse
            :ll-multipart-parser
            :make-ll-multipart-parser
+
+           ;; unparser
+           :http-unparse
 
            ;; Error
            :fast-http-error
