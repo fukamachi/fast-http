@@ -43,7 +43,8 @@
 
 (defun write-http-headers (http writer)
   (loop for (k v) on (http-headers http) by #'cddr
-        do (funcall writer (header-line k v)))
+        when v
+          do (funcall writer (header-line k v)))
   (funcall writer +crlf+))
 
 (defun http-unparse (http writer)
