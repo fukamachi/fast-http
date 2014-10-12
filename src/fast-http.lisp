@@ -214,7 +214,7 @@
                                    (when (and (http-store-body http)
                                               (null (http-body http)))
                                      (setf (http-body http)
-                                           (byte-vector-subseqs-to-byte-vector body-bytes
+                                           (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
                                                                                read-body-length)))
                                    (setq completedp t))))))
     (setf (http-store-body http) store-body)
