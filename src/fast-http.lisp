@@ -202,7 +202,7 @@
                                (type simple-byte-vector data))
                       (setf (http-resource http)
                             (babel:octets-to-string data :start start :end end)))
-               :body (and body-callback
+               :body (and (or body-callback store-body)
                           (named-lambda body-cb (parser data start end)
                             (declare (ignore parser)
                                      (type simple-byte-vector data))
@@ -225,13 +225,16 @@
            (when finish-callback
              (funcall (the function finish-callback))))
           (T (http-parse parser callbacks (the simple-byte-vector data))
-             (when (and body-callback header-complete-p)
+             (when (and (or body-callback
+                            (http-store-body http))
+                        header-complete-p)
                ;; body-callback
                (cond
                  (chunked
                   (let ((body (funcall body-bytes)))
-                    (funcall body-callback (byte-vector-subseqs-to-byte-vector body
-                                                                               read-body-length))
+                    (when body-callback
+                      (funcall body-callback (byte-vector-subseqs-to-byte-vector body
+                                                                                 read-body-length)))
                     (when (http-store-body http)
                       (setf (http-body http)
                             (if (http-body http)
@@ -240,16 +243,18 @@
                   (setq body-bytes (make-collector)))
                  ((numberp content-length)
                   (if (http-force-stream http)
-                      (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
-                                                                      read-body-length)))
-                        (funcall body-callback body)
+                      (when body-callback
+                        (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
+                                                                        read-body-length)))
+                          (funcall body-callback body))
                         (setq body-bytes (make-collector)))
                       (if (<= content-length read-body-length)
                           (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
                                                                           read-body-length)))
                             (when (http-store-body http)
                               (setf (http-body http) body))
-                            (funcall body-callback body))
+                            (when body-callback
+                              (funcall body-callback body)))
                           (return-from http-parser-execute nil))))
                  (T
                   ;; No Content-Length, no chunking, probably a request with no body
