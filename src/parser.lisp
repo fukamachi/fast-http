@@ -531,18 +531,18 @@
     (declare (type pointer end))
 
     (unless (= (parser-http-errno parser) +ok+)
-      (return-from http-parse 0))
+      (return-from http-parse start))
 
     (when (= start end)
       (casev (parser-state parser)
         (+state-body-identity-eof+
          (callback-notify parser callbacks :message-complete)
-         (return-from http-parse 0))
+         (return-from http-parse start))
         ((+state-dead+
           +state-start-req-or-res+
           +state-start-res+
           +state-start-req+)
-         (return-from http-parse 0))
+         (return-from http-parse start))
         (otherwise
          (error 'invalid-eof-state))))
 
