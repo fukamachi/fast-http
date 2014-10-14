@@ -6,6 +6,7 @@
            :callback-error
            :cb-message-begin
            :cb-url
+           :cb-request-line
            :cb-header-field
            :cb-header-value
            :cb-headers-complete
@@ -69,6 +70,8 @@
   ((description :initform "the message-begin callback failed")))
 (define-condition cb-url (callback-error)
   ((description :initform "the url callback failed")))
+(define-condition cb-request-line (callback-error)
+  ((description :initform "the request line callback failed")))
 (define-condition cb-header-field (callback-error)
   ((description :initform "the header-field callback failed")))
 (define-condition cb-header-value (callback-error)

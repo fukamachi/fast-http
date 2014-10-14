@@ -65,6 +65,7 @@
            :callback-error
            :cb-message-begin
            :cb-url
+           :cb-request-line
            :cb-header-field
            :cb-header-value
            :cb-headers-complete
@@ -106,7 +107,7 @@
 (in-package :fast-http)
 
 ;; TODO: multipart-callback
-(defun make-parser (http &key header-callback body-callback finish-callback store-body)
+(defun make-parser (http &key request-line-callback header-callback body-callback finish-callback store-body)
   "Returns a lambda function that takes a simple-byte-vector and parses it as an HTTP request/response."
   (declare (optimize (speed 3) (safety 2)))
   (let* ((header-value-collector nil)
@@ -186,22 +187,24 @@
                                  (header-callback #'parse-header-value)
                                  (body-callback #'parse-header-value-only-some-headers)))
                :headers-complete (named-lambda headers-complete-cb-with-callback (parser)
+                                   (declare (ignore parser))
                                    (setq header-complete-p t)
-                                   (setf (http-version http)
-                                         (+ (parser-http-major parser)
-                                            (/ (parser-http-minor parser) 10)))
-                                   (unless responsep
-                                     (setf (http-method http) (parser-method parser)))
                                    (collect-prev-header-value)
                                    (setq header-value-collector nil)
                                    (setf (http-headers http) headers)
                                    (when header-callback
                                      (funcall (the function header-callback) headers)))
+               :request-line (named-lambda request-line-cb (parser)
+                               (setf (http-version http)
+                                     (+ (parser-http-major parser)
+                                        (/ (parser-http-minor parser) 10)))
+                               (when request-line-callback
+                                 (funcall (the function request-line-callback))))
                :url (named-lambda url-cb (parser data start end)
-                      (declare (ignore parser)
-                               (type simple-byte-vector data))
+                      (declare  (type simple-byte-vector data))
                       (setf (http-resource http)
-                            (babel:octets-to-string data :start start :end end)))
+                            (babel:octets-to-string data :start start :end end))
+                      (setf (http-method http) (parser-method parser)))
                :body (and (or body-callback store-body)
                           (named-lambda body-cb (parser data start end)
                             (declare (ignore parser)
