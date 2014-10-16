@@ -1220,7 +1220,7 @@
 
          looking-for-parameter-key
            (case char
-             ((#\Space #\Tab #\;)
+             ((#\Space #\Tab #\; #\Newline #\Return)
               (go-state looking-for-parameter-key))
              (otherwise
               (unless (tokenp char)
