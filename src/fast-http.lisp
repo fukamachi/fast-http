@@ -225,12 +225,12 @@
                                  (setq completedp t)))))
     (setf (http-store-body http) store-body)
     (return-from make-parser
-      (named-lambda http-parser-execute (data)
+      (named-lambda http-parser-execute (data &key (start 0) end)
         (cond
           ((eql data :eof)
            (when finish-callback
              (funcall (the function finish-callback))))
-          (T (http-parse parser callbacks (the simple-byte-vector data))
+          (T (http-parse parser callbacks (the simple-byte-vector data) :start start :end end)
              (when (and (or body-callback
                             (http-store-body http))
                         header-complete-p)
