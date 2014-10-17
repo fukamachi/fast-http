@@ -9,7 +9,6 @@
         :fast-http.subseqs
         :fast-http.error)
   (:import-from :fast-http.multipart-parser
-                :ll-multipart-parser-state
                 :+body-done+)
   (:import-from :fast-http.util
                 :make-collector

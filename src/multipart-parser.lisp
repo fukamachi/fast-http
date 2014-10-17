@@ -18,6 +18,7 @@
   (:import-from :alexandria
                 :when-let)
   (:export :ll-multipart-parser
+           :ll-multipart-parser-state
            :make-ll-multipart-parser
            :http-multipart-parse))
 (in-package :fast-http.multipart-parser)
