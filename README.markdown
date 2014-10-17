@@ -28,6 +28,7 @@ The API is quite similar to [http-parse](https://github.com/orthecreedence/http-
   * Use `finish-callback` to know if the parsing is finished.
 * Raises errors aggressively while parsing.
   * Handle `fast-http-error` as you needed.
+* Doesn't use a property list as a representation of HTTP headers. (See [issue #1](https://github.com/fukamachi/fast-http/issues/1))
 * `make-parser` doesn't take `multipart-callback` (it's on my TODO list).
 
 ## Installation

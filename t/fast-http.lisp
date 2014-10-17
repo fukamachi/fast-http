@@ -34,8 +34,11 @@
                      (format nil "is~:[ not~;~] completed: ~D / ~D" (= i length) i length))
                  (when (and header-complete-p
                             (not headers-test-done-p))
-                   (is got-headers headers
-                       "headers")
+                   (subtest "headers"
+                     (loop for (k v) on headers by #'cddr
+                           do (is (gethash (string-downcase k) got-headers)
+                                  v))
+                     (is (hash-table-count got-headers) (/ (length headers) 2)))
                    (setf headers-test-done-p t))
                  (when (and completedp
                             (not body-test-done-p))

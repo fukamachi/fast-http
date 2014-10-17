@@ -125,16 +125,26 @@
 
 
 (defun test-parser (content-type data expected &optional description)
-  (is (collecting
-        (let ((parser (make-multipart-parser content-type
-                                             (lambda (field-name headers field-meta body)
-                                               (collect (list field-name
-                                                              headers
-                                                              field-meta
-                                                              (babel:octets-to-string body)))))))
-          (funcall parser data)))
-      expected
-      description))
+  (let ((got (collecting
+               (let ((parser (make-multipart-parser content-type
+                                                    (lambda (field-name headers field-meta body)
+                                                      (collect (list field-name
+                                                                     headers
+                                                                     field-meta
+                                                                     (babel:octets-to-string body)))))))
+                 (funcall parser data)))))
+    (flet ((hash-table-equal (hash plist desc)
+             (subtest desc
+               (maphash (lambda (k v)
+                          (is v (getf plist (intern (string-upcase k) :keyword)) k))
+                        hash))))
+      (subtest (or description "")
+        (loop for got in got
+              for expected in expected
+              do (is (first got) (first expected) "field-name")
+                 (hash-table-equal (second got) (second expected) "headers")
+                 (hash-table-equal (third got) (third expected) "field-meta")
+                 (is (fourth got) (fourth expected) "body"))))))
 
 (test-parser "multipart/form-data; boundary=AaB03x"
              (bv (str #?"--AaB03x\r\n"

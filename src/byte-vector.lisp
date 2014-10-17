@@ -19,7 +19,7 @@
            :alpha-byte-char-to-lower-char
            :alphanumeric-byte-char-p
            :mark-byte-char-p
-           :ascii-octets-to-upper-string
+           :ascii-octets-to-lower-string
            :case-byte
            :append-byte-vectors))
 (in-package :fast-http.byte-vector)
@@ -88,16 +88,16 @@
       (= byte #.(char-code #\())
       (= byte #.(char-code #\)))))
 
-(declaim (ftype (function ((unsigned-byte 8)) (unsigned-byte 8)) byte-to-ascii-upper)
-         (inline byte-to-ascii-upper))
-(defun byte-to-ascii-upper (x)
+(declaim (ftype (function ((unsigned-byte 8)) (unsigned-byte 8)) byte-to-ascii-lower)
+         (inline byte-to-ascii-lower))
+(defun byte-to-ascii-lower (x)
   (declare (type (unsigned-byte 8) x)
            (optimize (speed 3) (safety 0)))
-  (if (>= #.(char-code #\z) x #.(char-code #\a))
-      (+ #.(- (char-code #\A) (char-code #\a)) x)
+  (if (<= #.(char-code #\A) x #.(char-code #\Z))
+      (- x #.(- (char-code #\A) (char-code #\a)))
       x))
 
-(defun ascii-octets-to-upper-string (octets &key (start 0) end)
+(defun ascii-octets-to-lower-string (octets &key (start 0) end)
   (declare (type simple-byte-vector octets)
            (type (unsigned-byte 64) start)
            (optimize (speed 3) (safety 0)))
@@ -109,7 +109,7 @@
          (j start (1+ j)))
         ((= j end) string)
       (setf (aref string i)
-            (code-char (byte-to-ascii-upper (aref octets j)))))))
+            (code-char (byte-to-ascii-lower (aref octets j)))))))
 
 (defmacro case-byte (byte &body cases)
   `(case ,byte

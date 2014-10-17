@@ -1248,4 +1248,10 @@
                                         "q" "0"))
                               "Accept-Encoding")
 
+(test-parse-header-parameters #?"gzip;q=1.0,\nidentity;\nq=0.5, *;q=0"
+                              '("gzip" ("q" #?"1.0,\nidentity"
+                                        "q" "0.5, *"
+                                        "q" "0"))
+                              "new lines")
+
 (finalize)
