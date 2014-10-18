@@ -65,7 +65,7 @@
            :callback-error
            :cb-message-begin
            :cb-url
-           :cb-request-line
+           :cb-first-line
            :cb-header-field
            :cb-header-value
            :cb-headers-complete
@@ -107,7 +107,7 @@
 (in-package :fast-http)
 
 ;; TODO: multipart-callback
-(defun make-parser (http &key request-line-callback header-callback body-callback finish-callback store-body)
+(defun make-parser (http &key first-line-callback header-callback body-callback finish-callback store-body)
   "Returns a lambda function that takes a simple-byte-vector and parses it as an HTTP request/response."
   (declare (optimize (speed 3) (safety 2)))
   (let* ((headers (make-hash-table :test 'equal))
@@ -199,12 +199,13 @@
                                  (setf (http-headers http) headers)
                                  (when header-callback
                                    (funcall (the function header-callback) headers)))
-             :request-line (named-lambda request-line-cb (parser)
-                               (setf (http-method http) (parser-method parser)
-                                     (http-version http) (+ (parser-http-major parser)
-                                                            (/ (parser-http-minor parser) 10)))
-                               (when request-line-callback
-                                 (funcall (the function request-line-callback))))
+             :first-line (named-lambda first-line-cb (parser)
+                             (unless responsep
+                               (setf (http-method http) (parser-method parser)))
+                             (setf (http-version http) (+ (parser-http-major parser)
+                                                          (/ (parser-http-minor parser) 10)))
+                             (when first-line-callback
+                               (funcall (the function first-line-callback))))
              :url (named-lambda url-cb (parser data start end)
                     (declare (ignore parser)
                              (type simple-byte-vector data))
