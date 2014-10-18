@@ -73,6 +73,7 @@
 (defstruct ll-callbacks
   (message-begin nil :type (or null function))     ;; 1 arg
   (url nil :type (or null function))
+  (first-line nil :type (or null function))
   (status nil :type (or null function))
   (header-field nil :type (or null function))
   (header-value nil :type (or null function))
@@ -731,10 +732,12 @@
                    (setf (parser-state parser) +state-header-field-start+)
                    (callback-data parser callbacks :status
                                   data mark p)
+                   (callback-notify parser callbacks :first-line)
                    (go-state +state-header-field-start+ 1 nil))))
 
                (+state-res-line-almost-done+
                 (check-strictly (= byte +lf+))
+                (callback-notify parser callbacks :first-line)
                 (go-state +state-header-field-start+))
 
                (+state-start-req+
@@ -890,6 +893,7 @@
                              +state-header-field-start+))
                    (callback-data parser callbacks :url
                                   data mark p)
+                   (callback-notify parser callbacks :first-line)
                    (if (= byte +cr+)
                        (go-state +state-req-line-almost-done+ 1 nil)
                        (go-state +state-header-field-start+ 1 nil)))
@@ -955,8 +959,10 @@
                (+state-req-http-minor+
                 (cond
                   ((= byte +cr+)
+                   (callback-notify parser callbacks :first-line)
                    (go-state +state-req-line-almost-done+))
                   ((= byte +lf+)
+                   (callback-notify parser callbacks :first-line)
                    (go-state +state-header-field-start+))
                   ((not (digit-byte-char-p byte))
                    (error 'invalid-version))
