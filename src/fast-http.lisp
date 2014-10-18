@@ -65,6 +65,7 @@
            :callback-error
            :cb-message-begin
            :cb-url
+           :cb-first-line
            :cb-header-field
            :cb-header-value
            :cb-headers-complete
@@ -105,7 +106,7 @@
            :invalid-parameter-value))
 (in-package :fast-http)
 
-(defun make-parser (http &key header-callback body-callback finish-callback multipart-callback store-body)
+(defun make-parser (http &key first-line-callback header-callback body-callback finish-callback multipart-callback store-body)
   "Returns a lambda function that takes a simple-byte-vector and parses it as an HTTP request/response."
   (declare (optimize (speed 3) (safety 2)))
   (let* ((headers (make-hash-table :test 'equal))
@@ -198,12 +199,8 @@
                                (header-callback #'parse-header-value)
                                (body-callback #'parse-header-value-only-some-headers)))
              :headers-complete (named-lambda headers-complete-cb-with-callback (parser)
+                                 (declare (ignore parser))
                                  (setq header-complete-p t)
-                                 (setf (http-version http)
-                                       (+ (parser-http-major parser)
-                                          (/ (parser-http-minor parser) 10)))
-                                 (unless responsep
-                                   (setf (http-method http) (parser-method parser)))
                                  (collect-prev-header-value)
                                  (setq header-value-collector nil)
                                  (setf (http-headers http) headers)
@@ -213,6 +210,13 @@
                                             (stringp content-type))
                                    (setq multipart-parser
                                          (make-multipart-parser content-type multipart-callback))))
+             :first-line (named-lambda first-line-cb (parser)
+                             (unless responsep
+                               (setf (http-method http) (parser-method parser)))
+                             (setf (http-version http) (+ (parser-http-major parser)
+                                                          (/ (parser-http-minor parser) 10)))
+                             (when first-line-callback
+                               (funcall (the function first-line-callback))))
              :url (named-lambda url-cb (parser data start end)
                     (declare (ignore parser)
                              (type simple-byte-vector data))
