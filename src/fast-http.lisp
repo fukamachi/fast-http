@@ -161,7 +161,7 @@
                                   (parser-status-code parser))
                             (setf (http-status-text http)
                                   (babel:octets-to-string data :start start :end end))))
-             :header-field (and (or header-callback body-callback)
+             :header-field (and (or header-callback body-callback store-body)
                                 (named-lambda header-field-cb (parser data start end)
                                   (declare (ignore parser)
                                            (type simple-byte-vector data))
@@ -190,7 +190,7 @@
                                         (parse-header-value parser data start end))))
                              (cond
                                (header-callback #'parse-header-value)
-                               (body-callback #'parse-header-value-only-some-headers)))
+                               ((or body-callback store-body) #'parse-header-value-only-some-headers)))
              :headers-complete (named-lambda headers-complete-cb-with-callback (parser)
                                  (setq header-complete-p t)
                                  (setf (http-version http)
@@ -267,7 +267,7 @@
                   (setq completedp t))))
              (when (and completedp finish-callback)
                (funcall (the function finish-callback)))))
-        (values http header-complete-p completedp)))))
+        (values http header-complete-p (when completedp (setf completedp nil) t))))))
 
 (defun find-boundary (content-type)
   (declare (type string content-type))
