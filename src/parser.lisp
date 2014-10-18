@@ -732,10 +732,12 @@
                    (setf (parser-state parser) +state-header-field-start+)
                    (callback-data parser callbacks :status
                                   data mark p)
+                   (callback-notify parser callbacks :first-line)
                    (go-state +state-header-field-start+ 1 nil))))
 
                (+state-res-line-almost-done+
                 (check-strictly (= byte +lf+))
+                (callback-notify parser callbacks :first-line)
                 (go-state +state-header-field-start+))
 
                (+state-start-req+

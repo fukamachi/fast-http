@@ -193,6 +193,7 @@
                                (header-callback #'parse-header-value)
                                (body-callback #'parse-header-value-only-some-headers)))
              :headers-complete (named-lambda headers-complete-cb-with-callback (parser)
+                                 (declare (ignore parser))
                                  (setq header-complete-p t)
                                  (collect-prev-header-value)
                                  (setq header-value-collector nil)
