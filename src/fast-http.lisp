@@ -40,6 +40,8 @@
 
            :make-multipart-parser
 
+           :*body-buffer-limit*
+
            ;; Low-level parser API
            :http-parse
            :ll-parser
@@ -60,6 +62,8 @@
 
            ;; Error
            :fast-http-error
+
+           :body-buffer-exceeded
 
            :callback-error
            :cb-message-begin
@@ -104,6 +108,10 @@
            :invalid-parameter-key
            :invalid-parameter-value))
 (in-package :fast-http)
+
+(defvar *body-buffer-limit* nil
+  "The limit length of HTTP body buffer. If this is NIL (default), there's no limitation.
+If the request is chunked or :force-stream option of the HTTP object, the limit is only applied for each callback.")
 
 (defun make-parser (http &key first-line-callback header-callback body-callback finish-callback multipart-callback store-body)
   "Returns a lambda function that takes a simple-byte-vector and parses it as an HTTP request/response."
@@ -226,6 +234,9 @@
                           (declare (ignore parser)
                                    (type simple-byte-vector data))
                           (incf read-body-length (- end start))
+                          (when (and *body-buffer-limit*
+                                     (< *body-buffer-limit* read-body-length))
+                            (error 'body-buffer-exceeded :limit *body-buffer-limit*))
                           (funcall body-bytes (make-byte-vector-subseq data start end))))
              :message-complete (named-lambda message-complete-cb (parser)
                                  (declare (ignore parser))
@@ -264,7 +275,8 @@
                             (if (http-body http)
                                 (append-byte-vectors (http-body http) body)
                                 body))))
-                  (setq body-bytes (make-collector)))
+                  (setq body-bytes (make-collector)
+                        read-body-length 0))
                  ((numberp content-length)
                   (if (http-force-stream http)
                       (when (or body-callback multipart-parser)
@@ -274,7 +286,8 @@
                             (funcall body-callback body))
                           (when multipart-parser
                             (funcall multipart-parser body))
-                          (setq body-bytes (make-collector))))
+                          (setq body-bytes (make-collector)
+                                read-body-length 0)))
                       (if (<= content-length read-body-length)
                           (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
                                                                           read-body-length)))

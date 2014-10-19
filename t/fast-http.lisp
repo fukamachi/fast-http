@@ -486,4 +486,29 @@
       nil
       "Return NIL when the body length is less than content-length"))
 
+(subtest "*body-buffer-limit*")
+(let ((*body-buffer-limit* 10))
+  (ok (funcall (make-parser (make-http-request) :store-body t)
+               (bv (str #?"GET / HTTP/1.1\r\n"
+                        #?"Content-Type: text/plain\r\n"
+                        #?"Content-Length: 6\r\n"
+                        #?"\r\n"
+                        "foobar")))
+      "normal request")
+  (ok (funcall (make-parser (make-http-request) :store-body t)
+               (bv (str #?"GET / HTTP/1.1\r\n"
+                        #?"Content-Type: text/plain\r\n"
+                        #?"Content-Length: 10\r\n"
+                        #?"\r\n"
+                        "foobarfoob")))
+      "normal request")
+  (is-error (funcall (make-parser (make-http-request) :store-body t)
+                     (bv (str #?"GET / HTTP/1.1\r\n"
+                              #?"Content-Type: text/plain\r\n"
+                              #?"Content-Length: 12\r\n"
+                              #?"\r\n"
+                              "foobarfoobar")))
+            'body-buffer-exceeded
+            "Raise BODY-BUFFER-EXCEEDED if the body is large"))
+
 (finalize)
