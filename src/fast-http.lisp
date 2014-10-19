@@ -135,93 +135,89 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
          callbacks)
     (declare (type simple-string parsing-header-field))
     (flet ((collect-prev-header-value ()
-             (declare (optimize (speed 3) (safety 0)))
+             (declare (optimize (speed 3) (safety 2)))
              (when header-value-buffer
                ;; Collect the previous header-value
-               (let* ((header-value
-                        (coerce-to-string header-value-buffer))
-                      (header-value
-                        (if (number-string-p header-value)
-                            (read-from-string header-value)
-                            header-value)))
+               (let ((header-value
+                       (locally (declare (optimize (speed 3) (safety 0)))
+                         (coerce-to-string
+                          (the (or octets-concatenated-xsubseqs
+                                   octets-xsubseq)
+                               header-value-buffer)))))
+                 (declare (type simple-string header-value))
                  (multiple-value-bind (previous-value existp)
-                     (gethash parsing-header-field headers)
-                   (setf (gethash parsing-header-field headers)
+                     (gethash (the simple-string parsing-header-field) headers)
+                   (setf (gethash (the simple-string parsing-header-field) headers)
                          (if existp
                              (format nil "~A, ~A" previous-value header-value)
-                             header-value)))))))
+                             (if (number-string-p header-value)
+                                 (read-from-string header-value)
+                                 header-value))))))))
       (setq callbacks
             (make-ll-callbacks
              :status (and responsep
                           (named-lambda status-cb (parser data start end)
                             (declare (type simple-byte-vector data))
-                            (with-bench status-cb
-                              (setf (http-status http)
-                                    (parser-status-code parser))
-                              (setf (http-status-text http)
-                                    (babel:octets-to-string data :start start :end end)))))
+                            (setf (http-status http)
+                                  (parser-status-code parser))
+                            (setf (http-status-text http)
+                                  (babel:octets-to-string data :start start :end end))))
              :header-field (named-lambda header-field-cb (parser data start end)
                              (declare (ignore parser)
                                       (type simple-byte-vector data))
-                             (with-bench header-field
-                               (collect-prev-header-value)
-                               (setq header-value-buffer (make-concatenated-xsubseqs))
-                               (setq parsing-header-field
-                                     (ascii-octets-to-lower-string data :start start :end end))))
+                             (collect-prev-header-value)
+                             (setq header-value-buffer (make-concatenated-xsubseqs))
+                             (setq parsing-header-field
+                                   (ascii-octets-to-lower-string data :start start :end end)))
              :header-value (named-lambda header-value-cb (parser data start end)
                              (declare (ignore parser)
                                       (type simple-byte-vector data))
-                             (with-bench header-value
-                               (xnconcf header-value-buffer (xsubseq (the simple-byte-vector data) start end))))
+                             (xnconcf header-value-buffer
+                                      (xsubseq (the simple-byte-vector data) start end)))
              :headers-complete (named-lambda headers-complete-cb-with-callback (parser)
                                  (declare (ignore parser))
-                                 (with-bench headers-complete
-                                   (setq header-complete-p t)
-                                   (setq chunked
-                                         (equal (gethash "transfer-encoding" headers)
-                                                "chunked")
-                                         content-length (gethash "content-length" headers)
-                                         content-type (gethash "content-type" headers))
-                                   (collect-prev-header-value)
-                                   (setq header-value-buffer nil)
-                                   (setf (http-headers http) headers)
-                                   (when header-callback
-                                     (funcall (the function header-callback) headers))
-                                   (when (and multipart-callback
-                                              (stringp content-type))
-                                     (setq multipart-parser
-                                           (make-multipart-parser content-type multipart-callback)))))
+                                 (setq header-complete-p t)
+                                 (setq chunked
+                                       (equal (gethash "transfer-encoding" headers)
+                                              "chunked")
+                                       content-length (gethash "content-length" headers)
+                                       content-type (gethash "content-type" headers))
+                                 (collect-prev-header-value)
+                                 (setq header-value-buffer nil)
+                                 (setf (http-headers http) headers)
+                                 (when header-callback
+                                   (funcall (the function header-callback) headers))
+                                 (when (and multipart-callback
+                                            (stringp content-type))
+                                   (setq multipart-parser
+                                         (make-multipart-parser content-type multipart-callback))))
              :first-line (named-lambda first-line-cb (parser)
-                           (with-bench first-line
-                             (unless responsep
-                               (setf (http-method http) (parser-method parser)))
-                             (setf (http-version http) (+ (parser-http-major parser)
-                                                          (/ (parser-http-minor parser) 10)))
-                             (when first-line-callback
-                               (funcall (the function first-line-callback)))))
+                           (unless responsep
+                             (setf (http-method http) (parser-method parser)))
+                           (setf (http-version http) (+ (parser-http-major parser)
+                                                        (/ (parser-http-minor parser) 10)))
+                           (when first-line-callback
+                             (funcall (the function first-line-callback))))
              :url (named-lambda url-cb (parser data start end)
                     (declare (ignore parser)
                              (type simple-byte-vector data))
-                    (with-bench url
-                      (setf (http-resource http)
-                            (babel:octets-to-string data :start start :end end))))
+                    (setf (http-resource http)
+                          (babel:octets-to-string data :start start :end end)))
              :body (and (or body-callback multipart-callback store-body)
                         (named-lambda body-cb (parser data start end)
                           (declare (ignore parser)
                                    (type simple-byte-vector data))
-                          (with-bench body
-                            (when (and *request-body-limit*
-                                       (< *request-body-limit* (xlength body-bytes)))
-                              (error 'body-buffer-exceeded :limit *request-body-limit*))
-                            (xnconcf body-bytes (xsubseq (the simple-byte-vector data) start end)))))
+                          (when (and *request-body-limit*
+                                     (< *request-body-limit* (xlength body-bytes)))
+                            (error 'body-buffer-exceeded :limit *request-body-limit*))
+                          (xnconcf body-bytes (xsubseq (the simple-byte-vector data) start end))))
              :message-complete (named-lambda message-complete-cb (parser)
                                  (declare (ignore parser))
-                                 (with-bench message-complete
-                                   (collect-prev-header-value)
-                                   (when (and (http-store-body http)
-                                              (null (http-body http)))
-                                     (setf (http-body http)
-                                           (coerce-to-sequence body-bytes))))
+                                 (collect-prev-header-value)
+                                 (when (and (http-store-body http)
+                                            (null (http-body http)))
+                                   (setf (http-body http)
+                                         (coerce-to-sequence body-bytes)))
                                  (setq completedp t)))))
     (setf (http-store-body http) store-body)
     (return-from make-parser
