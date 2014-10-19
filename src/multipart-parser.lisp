@@ -8,6 +8,8 @@
   (:import-from :fast-http.parser
                 :ll-callbacks-body
                 :ll-callbacks-headers-complete
+                :ll-callbacks-message-begin
+                :ll-callbacks-message-complete
                 :parser-state)
   (:import-from :fast-http.util
                 :check-strictly
@@ -121,18 +123,30 @@
                   (+cr+ (go-state +parsing-delimiter-almost-done+))
                   (+lf+ (go-state +parsing-delimiter-almost-done+ 0))
                   (+dash+ (go-state +body-almost-done+))
-                  (otherwise (error 'invalid-boundary))))
+                  (otherwise
+                   ;; Still in the body
+                   (when (ll-multipart-parser-body-mark parser)
+                     (go-state +looking-for-delimiter+))
+                   (error 'invalid-boundary))))
 
                (+parsing-delimiter-almost-done+
                 (unless (= byte +lf+)
                   (error 'invalid-boundary))
-                (when (and (ll-multipart-parser-body-mark parser)
-                           (ll-multipart-parser-boundary-mark parser))
+                (when (ll-multipart-parser-body-mark parser)
                   ;; got a part
-                  (call-body-cb))
+                  (when (ll-multipart-parser-boundary-mark parser)
+                    (call-body-cb))
+                  (when-let (callback (ll-callbacks-message-complete callbacks))
+                    (handler-case (funcall callback parser)
+                      (error (e)
+                        (error 'cb-message-complete :error e)))))
                 (go-state +parsing-delimiter-done+))
 
                (+parsing-delimiter-done+
+                (when-let (callback (ll-callbacks-message-begin callbacks))
+                  (handler-case (funcall callback parser)
+                    (error (e)
+                      (error 'cb-message-begin :error e))))
                 (setf (ll-multipart-parser-body-mark parser) p)
                 (go-state +header-field-start+ 0))
 
@@ -187,6 +201,10 @@
                 (when (ll-multipart-parser-body-mark parser)
                   ;; got a part
                   (call-body-cb)
+                  (when-let (callback (ll-callbacks-message-complete callbacks))
+                    (handler-case (funcall callback parser)
+                      (error (e)
+                        (error 'cb-message-complete :error e))))
                   (setf (ll-multipart-parser-body-mark parser) nil))
                 (go exit-loop))))
          exit-loop)

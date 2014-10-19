@@ -242,4 +242,54 @@
                 #?"Test text\n with\r\n ümläuts!"))
              "multiline header value")
 
+
+;;
+;; Continuous calling
+
+(let* ((got-body nil)
+       (parser (make-multipart-parser
+                "multipart/form-data; boundary=\"---------------------------186454651713519341951581030105\""
+                (lambda (field-name headers field-meta body)
+                  (declare (ignore field-name headers field-meta))
+                  (setf got-body body)))))
+  (is (funcall parser
+               (bv (str #?"-----------------------------186454651713519341951581030105\r\n"
+                        #?"Content-Disposition: form-data;\r\n"
+                        #?"\tname=\"file1\"; filename=\"random.png\"\r\n"
+                        #?"Content-Type: image/png\r\n"
+                        #?"\r\n"
+                        #?"abc\r\n")))
+      nil)
+  (is got-body nil)
+  (is (funcall parser
+               (bv #?"-----------------------------186454651713519341951581030105\r\n"))
+      nil)
+  (is got-body (bv "abc") :test #'equalp))
+
+(let* ((got-body nil)
+       (parser (make-multipart-parser
+                "multipart/form-data; boundary=\"---------------------------186454651713519341951581030105\""
+                (lambda (field-name headers field-meta body)
+                  (declare (ignore field-name headers field-meta))
+                  (setf got-body body)))))
+  (is (funcall parser
+               (bv (str #?"-----------------------------186454651713519341951581030105\r\n"
+                        #?"Content-Disposition: form-data;\r\n"
+                        #?"\tname=\"file1\"; filename=\"random.png\"\r\n"
+                        #?"Content-Type: image/png\r\n"
+                        #?"\r\n"
+                        #?"abc\r\n")))
+      nil)
+  (is got-body nil)
+  (is (funcall parser
+               (bv #?"-----------------------------186454651713519341951581030105abc\r\n"))
+      nil)
+  (is got-body nil)
+  (is (funcall parser
+               (bv #?"-----------------------------186454651713519341951581030105\r\n"))
+      nil)
+  (is got-body (bv (str #?"abc\r\n"
+                        #?"-----------------------------186454651713519341951581030105abc"))
+      :test #'equalp))
+
 (finalize)

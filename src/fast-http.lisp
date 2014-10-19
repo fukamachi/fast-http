@@ -307,6 +307,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
           parsing-header-field
           field-meta
           header-value-buffer
+          (body-bytes (make-concatenated-xsubseqs))
           callbacks)
       (flet ((collect-prev-header-value ()
                (when header-value-buffer
@@ -344,16 +345,22 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                                (declare (ignore parser))
                                (xnconcf header-value-buffer
                                         (xsubseq data start end)))
+               :headers-complete (lambda (parser)
+                                   (declare (ignore parser))
+                                   (collect-prev-header-value))
+               :message-complete (lambda (parser)
+                                   (declare (ignore parser))
+                                   (funcall callback
+                                            (gethash "name" field-meta)
+                                            headers
+                                            field-meta
+                                            (coerce-to-sequence body-bytes))
+                                   (setq headers (make-hash-table :test 'equal)
+                                         body-bytes (make-concatenated-xsubseqs)
+                                         header-value-buffer nil))
                :body (lambda (parser data start end)
                        (declare (ignore parser))
-                       (collect-prev-header-value)
-                       (funcall callback
-                                (gethash "name" field-meta)
-                                headers
-                                field-meta
-                                (subseq data start end))
-                       (setq headers (make-hash-table :test 'equal)
-                             header-value-buffer nil)))))
+                       (xnconcf body-bytes (xsubseq data start end))))))
       (lambda (data)
         (http-multipart-parse parser callbacks data)
         (= (ll-multipart-parser-state parser) +body-done+)))))
