@@ -64,7 +64,7 @@
            ;; Error
            :fast-http-error
 
-           :body-buffer-exceeded
+           :request-body-too-large
 
            :callback-error
            :cb-message-begin
@@ -185,7 +185,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                                        content-type (gethash "content-type" headers))
                                  (when (and content-length
                                             (< *request-body-limit* content-length))
-                                   (error 'body-buffer-exceeded :limit *request-body-limit*))
+                                   (error 'request-body-too-large :limit *request-body-limit*))
                                  (setq header-value-buffer nil)
                                  (setf (http-headers http) headers)
                                  (when header-callback
@@ -213,7 +213,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                           (xnconcf body-bytes (xsubseq (the simple-byte-vector data) start end))
                           (when (and *request-body-limit*
                                      (< *request-body-limit* (xlength body-bytes)))
-                            (error 'body-buffer-exceeded :limit *request-body-limit*))))
+                            (error 'request-body-too-large :limit *request-body-limit*))))
              :message-complete (named-lambda message-complete-cb (parser)
                                  (declare (ignore parser))
                                  (collect-prev-header-value)

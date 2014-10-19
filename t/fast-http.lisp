@@ -508,7 +508,7 @@
                               #?"Content-Length: 12\r\n"
                               #?"\r\n"
                               "foobarfoobar")))
-            'body-buffer-exceeded
-            "Raise BODY-BUFFER-EXCEEDED if the body is large"))
+            'request-body-too-large
+            "Raise REQUEST-BODY-TOO-LARGE if the body is large"))
 
 (finalize)
