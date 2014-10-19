@@ -7,8 +7,7 @@
         :fast-http.multipart-parser
         :fast-http.byte-vector
         :fast-http.error
-        :xsubseq
-        :partial-bench)
+        :xsubseq)
   (:import-from :fast-http.multipart-parser
                 :+body-done+)
   (:import-from :fast-http.util
