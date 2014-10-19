@@ -6,8 +6,8 @@
         :fast-http.unparser
         :fast-http.multipart-parser
         :fast-http.byte-vector
-        :fast-http.subseqs
         :fast-http.error
+        :xsubseq
         :partial-bench)
   (:import-from :fast-http.multipart-parser
                 :+body-done+)
@@ -119,47 +119,31 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
   (declare (optimize (speed 3) (safety 2)))
   (let* ((headers (make-hash-table :test 'equal))
 
-         (header-value-collector nil)
-         (current-len 0)
+         (header-value-buffer nil)
          (header-complete-p nil)
          (completedp nil)
 
-         parsing-header-field
-         (parsing-transfer-encoding-p nil)
+         (parsing-header-field "")
          (chunked nil)
-         (parsing-content-length-p nil)
          (content-length nil)
-         (parsing-content-type-p nil)
          (content-type nil)
-         (read-body-length 0)
-         (body-bytes (make-collector)) ;; for chunking
+         (body-bytes (make-concatenated-xsubseqs)) ;; for chunking
 
          (responsep (http-response-p http))
          (parser (make-ll-parser :type (if responsep :response :request)))
          (multipart-parser nil)
          callbacks)
+    (declare (type simple-string parsing-header-field))
     (flet ((collect-prev-header-value ()
-             (when header-value-collector
+             (declare (optimize (speed 3) (safety 0)))
+             (when header-value-buffer
                ;; Collect the previous header-value
                (let* ((header-value
-                        (byte-vector-subseqs-to-string
-                         (funcall (the function header-value-collector))
-                         current-len))
+                        (coerce-to-string header-value-buffer))
                       (header-value
                         (if (number-string-p header-value)
                             (read-from-string header-value)
                             header-value)))
-                 (cond
-                   (parsing-transfer-encoding-p
-                    (when (equal header-value "chunked")
-                      (setq chunked t))
-                    (setq parsing-transfer-encoding-p nil))
-                   (parsing-content-length-p
-                    (setq content-length header-value
-                          parsing-content-length-p nil))
-                   (parsing-content-type-p
-                    (setq content-type header-value
-                          parsing-content-type-p nil)))
                  (multiple-value-bind (previous-value existp)
                      (gethash parsing-header-field headers)
                    (setf (gethash parsing-header-field headers)
@@ -179,42 +163,27 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
              :header-field (named-lambda header-field-cb (parser data start end)
                              (declare (ignore parser)
                                       (type simple-byte-vector data))
-                             (with-bench header-field-cb
+                             (with-bench header-field
                                (collect-prev-header-value)
-                               (setq header-value-collector (make-collector))
-                               (setq current-len 0)
-
-                               ;; Collect the header-field
-                               (let ((header-field
-                                       (ascii-octets-to-lower-string data :start start :end end)))
-                                 (cond
-                                   ((string= "transfer-encoding" header-field)
-                                    (setq parsing-transfer-encoding-p t))
-                                   ((string= "content-length" header-field)
-                                    (setq parsing-content-length-p t))
-                                   ((string= "content-type" header-field)
-                                    (setq parsing-content-type-p t)))
-                                 (setq parsing-header-field header-field))))
-             :header-value (labels ((parse-header-value (parser data start end)
-                                      (declare (ignore parser)
-                                               (type simple-byte-vector data))
-                                      (with-bench header-value
-                                        (incf current-len (- end start))
-                                        (funcall (the function header-value-collector)
-                                                 (make-byte-vector-subseq data start end))))
-                                    (parse-header-value-only-some-headers (parser data start end)
-                                      (when (or parsing-content-length-p
-                                                parsing-transfer-encoding-p)
-                                        (parse-header-value parser data start end))))
-                             (cond
-                               (header-callback #'parse-header-value)
-                               (body-callback #'parse-header-value-only-some-headers)))
+                               (setq header-value-buffer (make-concatenated-xsubseqs))
+                               (setq parsing-header-field
+                                     (ascii-octets-to-lower-string data :start start :end end))))
+             :header-value (named-lambda header-value-cb (parser data start end)
+                             (declare (ignore parser)
+                                      (type simple-byte-vector data))
+                             (with-bench header-value
+                               (xnconcf header-value-buffer (xsubseq (the simple-byte-vector data) start end))))
              :headers-complete (named-lambda headers-complete-cb-with-callback (parser)
                                  (declare (ignore parser))
                                  (with-bench headers-complete
                                    (setq header-complete-p t)
+                                   (setq chunked
+                                         (equal (gethash "transfer-encoding" headers)
+                                                "chunked")
+                                         content-length (gethash "content-length" headers)
+                                         content-type (gethash "content-type" headers))
                                    (collect-prev-header-value)
-                                   (setq header-value-collector nil)
+                                   (setq header-value-buffer nil)
                                    (setf (http-headers http) headers)
                                    (when header-callback
                                      (funcall (the function header-callback) headers))
@@ -241,11 +210,10 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                           (declare (ignore parser)
                                    (type simple-byte-vector data))
                           (with-bench body
-                            (incf read-body-length (- end start))
                             (when (and *request-body-limit*
-                                       (< *request-body-limit* read-body-length))
+                                       (< *request-body-limit* (xlength body-bytes)))
                               (error 'body-buffer-exceeded :limit *request-body-limit*))
-                            (funcall body-bytes (make-byte-vector-subseq data start end)))))
+                            (xnconcf body-bytes (xsubseq (the simple-byte-vector data) start end)))))
              :message-complete (named-lambda message-complete-cb (parser)
                                  (declare (ignore parser))
                                  (with-bench message-complete
@@ -253,8 +221,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                                    (when (and (http-store-body http)
                                               (null (http-body http)))
                                      (setf (http-body http)
-                                           (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
-                                                                               read-body-length))))
+                                           (coerce-to-sequence body-bytes))))
                                  (setq completedp t)))))
     (setf (http-store-body http) store-body)
     (return-from make-parser
@@ -271,10 +238,9 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                ;; body-callback
                (cond
                  (chunked
-                  (let ((body (funcall body-bytes)))
+                  (let ((body (coerce-to-sequence body-bytes)))
                     (when (or body-callback multipart-parser)
-                      (let ((chunk-data (byte-vector-subseqs-to-byte-vector body
-                                                                            read-body-length)))
+                      (let ((chunk-data body))
                         (when body-callback
                           (funcall body-callback chunk-data))
                         (when multipart-parser
@@ -284,22 +250,18 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                             (if (http-body http)
                                 (append-byte-vectors (http-body http) body)
                                 body))))
-                  (setq body-bytes (make-collector)
-                        read-body-length 0))
+                  (setq body-bytes (make-concatenated-xsubseqs)))
                  ((numberp content-length)
                   (if (http-force-stream http)
                       (when (or body-callback multipart-parser)
-                        (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
-                                                                         read-body-length)))
+                        (let ((body (coerce-to-sequence body-bytes)))
                           (when body-callback
                             (funcall body-callback body))
                           (when multipart-parser
                             (funcall multipart-parser body))
-                          (setq body-bytes (make-collector)
-                                read-body-length 0)))
-                      (if (<= content-length read-body-length)
-                          (let ((body (byte-vector-subseqs-to-byte-vector (funcall body-bytes)
-                                                                          read-body-length)))
+                          (setq body-bytes (make-concatenated-xsubseqs))))
+                      (if (<= content-length (xlength body-bytes))
+                          (let ((body (coerce-to-sequence body-bytes)))
                             (when (http-store-body http)
                               (setf (http-body http) body))
                             (when body-callback
@@ -340,19 +302,16 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
       (return-from make-multipart-parser nil))
 
     (let ((parser (make-ll-multipart-parser :boundary boundary))
-          (current-len 0)
           (headers (make-hash-table :test 'equal))
           parsing-content-disposition
           parsing-header-field
           field-meta
-          header-value-collector
+          header-value-buffer
           callbacks)
       (flet ((collect-prev-header-value ()
-               (when header-value-collector
+               (when header-value-buffer
                  (let ((header-value
-                         (byte-vector-subseqs-to-string
-                          (funcall (the function header-value-collector))
-                          current-len)))
+                         (coerce-to-string header-value-buffer)))
                    (when parsing-content-disposition
                      (setq field-meta
                            (let (parsing-key
@@ -374,8 +333,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                :header-field (lambda (parser data start end)
                                (declare (ignore parser))
                                (collect-prev-header-value)
-                               (setq header-value-collector (make-collector))
-                               (setq current-len 0)
+                               (setq header-value-buffer (make-concatenated-xsubseqs))
 
                                (let ((header-name
                                        (ascii-octets-to-lower-string data :start start :end end)))
@@ -384,9 +342,8 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                                  (setq parsing-header-field header-name)))
                :header-value (lambda (parser data start end)
                                (declare (ignore parser))
-                               (incf current-len (- end start))
-                               (funcall header-value-collector
-                                        (make-byte-vector-subseq data start end)))
+                               (xnconcf header-value-buffer
+                                        (xsubseq data start end)))
                :body (lambda (parser data start end)
                        (declare (ignore parser))
                        (collect-prev-header-value)
@@ -396,7 +353,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                                 field-meta
                                 (subseq data start end))
                        (setq headers (make-hash-table :test 'equal)
-                             header-value-collector nil)))))
+                             header-value-buffer nil)))))
       (lambda (data)
         (http-multipart-parse parser callbacks data)
         (= (ll-multipart-parser-state parser) +body-done+)))))

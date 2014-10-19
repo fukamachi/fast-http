@@ -487,7 +487,7 @@
       "Return NIL when the body length is less than content-length"))
 
 (subtest "*body-buffer-limit*")
-(let ((*body-buffer-limit* 10))
+(let ((*request-body-limit* 10))
   (ok (funcall (make-parser (make-http-request) :store-body t)
                (bv (str #?"GET / HTTP/1.1\r\n"
                         #?"Content-Type: text/plain\r\n"

@@ -18,17 +18,17 @@
   :depends-on (:alexandria
                :cl-utilities
                :babel
+               :xsubseq
                :partial-bench
                :log4cl)
   :components ((:module "src"
                 :components
-                ((:file "fast-http" :depends-on ("http" "parser" "unparser" "multipart-parser" "byte-vector" "error" "subseqs"))
+                ((:file "fast-http" :depends-on ("http" "parser" "unparser" "multipart-parser" "byte-vector" "error"))
                  (:file "http")
                  (:file "parser"  :depends-on ("byte-vector" "url" "variables" "error" "util"))
                  (:file "unparser" :depends-on ("http"))
                  (:file "multipart-parser" :depends-on ("parser" "byte-vector" "error"))
                  (:file "byte-vector")
-                 (:file "subseqs" :depends-on ("byte-vector"))
                  (:file "url" :depends-on ("variables" "util"))
                  (:file "variables")
                  (:file "error")
