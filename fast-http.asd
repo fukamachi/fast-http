@@ -19,7 +19,6 @@
                :cl-utilities
                :babel
                :xsubseq
-               :partial-bench
                :log4cl)
   :components ((:module "src"
                 :components
