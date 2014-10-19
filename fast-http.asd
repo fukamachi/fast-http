@@ -18,6 +18,7 @@
   :depends-on (:alexandria
                :cl-utilities
                :babel
+               :partial-bench
                :log4cl)
   :components ((:module "src"
                 :components
