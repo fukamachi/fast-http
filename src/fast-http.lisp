@@ -184,6 +184,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                                        content-type (gethash "content-type" headers))
                                  (when (and (not responsep)
                                             content-length
+                                            *request-body-limit*
                                             (< *request-body-limit* content-length))
                                    (error 'request-body-too-large :limit *request-body-limit*))
                                  (setq header-value-buffer nil)
