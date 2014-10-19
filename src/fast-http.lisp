@@ -183,6 +183,9 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                                               "chunked")
                                        content-length (gethash "content-length" headers)
                                        content-type (gethash "content-type" headers))
+                                 (when (and content-length
+                                            (< *request-body-limit* content-length))
+                                   (error 'body-buffer-exceeded :limit *request-body-limit*))
                                  (setq header-value-buffer nil)
                                  (setf (http-headers http) headers)
                                  (when header-callback
