@@ -40,7 +40,7 @@
 
            :make-multipart-parser
 
-           :*body-buffer-limit*
+           :*request-body-limit*
 
            ;; Low-level parser API
            :http-parse
@@ -109,8 +109,8 @@
            :invalid-parameter-value))
 (in-package :fast-http)
 
-(defvar *body-buffer-limit* nil
-  "The limit length of HTTP body buffer. If this is NIL (default), there's no limitation.
+(defvar *request-body-limit* nil
+  "The limit length of HTTP request body. If this is NIL (default), there's no limitation.
 If the request is chunked or :force-stream option of the HTTP object, the limit is only applied for each callback.")
 
 (defun make-parser (http &key first-line-callback header-callback body-callback finish-callback multipart-callback store-body)
@@ -234,9 +234,9 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                           (declare (ignore parser)
                                    (type simple-byte-vector data))
                           (incf read-body-length (- end start))
-                          (when (and *body-buffer-limit*
-                                     (< *body-buffer-limit* read-body-length))
-                            (error 'body-buffer-exceeded :limit *body-buffer-limit*))
+                          (when (and *request-body-limit*
+                                     (< *request-body-limit* read-body-length))
+                            (error 'body-buffer-exceeded :limit *request-body-limit*))
                           (funcall body-bytes (make-byte-vector-subseq data start end))))
              :message-complete (named-lambda message-complete-cb (parser)
                                  (declare (ignore parser))
