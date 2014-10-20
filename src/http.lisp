@@ -20,7 +20,6 @@
            :http-status
            :http-status-text
 
-           :http-store-body
            :http-force-stream))
 (in-package :fast-http.http)
 
@@ -28,7 +27,6 @@
   "Base structure class extended by HTTP-REQUEST and HTTP-RESPONSE."
   version
   headers
-  store-body
   force-stream
   body)
 

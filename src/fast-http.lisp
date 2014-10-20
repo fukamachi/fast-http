@@ -30,7 +30,6 @@
            :http-response-p
            :http-version
            :http-headers
-           :http-store-body
            :http-force-stream
            :http-body
            :http-method
@@ -113,7 +112,7 @@
   "The limit length of HTTP request body. If this is NIL (default), there's no limitation.
 If the request is chunked or :force-stream option of the HTTP object, the limit is only applied for each callback.")
 
-(defun make-parser (http &key first-line-callback header-callback body-callback finish-callback multipart-callback store-body)
+(defun make-parser (http &key first-line-callback header-callback body-callback finish-callback multipart-callback)
   "Returns a lambda function that takes a simple-byte-vector and parses it as an HTTP request/response."
   (declare (optimize (speed 3) (safety 2)))
   (let* ((headers (make-hash-table :test 'equal))
@@ -207,7 +206,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                              (type simple-byte-vector data))
                     (setf (http-resource http)
                           (babel:octets-to-string data :start start :end end)))
-             :body (and (or body-callback multipart-callback store-body)
+             :body (and (or body-callback multipart-callback)
                         (named-lambda body-cb (parser data start end)
                           (declare (ignore parser)
                                    (type simple-byte-vector data))
@@ -219,12 +218,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
              :message-complete (named-lambda message-complete-cb (parser)
                                  (declare (ignore parser))
                                  (collect-prev-header-value)
-                                 (when (and (http-store-body http)
-                                            (null (http-body http)))
-                                   (setf (http-body http)
-                                         (coerce-to-sequence body-bytes)))
                                  (setq completedp t)))))
-    (setf (http-store-body http) store-body)
     (return-from make-parser
       (named-lambda http-parser-execute (data &key (start 0) end)
         (cond
@@ -233,8 +227,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
              (funcall (the function finish-callback))))
           (T (http-parse parser callbacks (the simple-byte-vector data) :start start :end end)
              (when (and (or body-callback
-                            multipart-parser
-                            (http-store-body http))
+                            multipart-parser)
                         header-complete-p)
                ;; body-callback
                (cond
@@ -245,12 +238,7 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                         (when body-callback
                           (funcall (the function body-callback) chunk-data))
                         (when multipart-parser
-                          (funcall (the function multipart-parser) chunk-data))))
-                    (when (http-store-body http)
-                      (setf (http-body http)
-                            (if (http-body http)
-                                (append-byte-vectors (http-body http) body)
-                                body))))
+                          (funcall (the function multipart-parser) chunk-data)))))
                   (setq body-bytes (make-concatenated-xsubseqs)))
                  ((numberp content-length)
                   (if (http-force-stream http)
@@ -263,8 +251,6 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                           (setq body-bytes (make-concatenated-xsubseqs))))
                       (if (<= content-length (xlength body-bytes))
                           (let ((body (coerce-to-sequence body-bytes)))
-                            (when (http-store-body http)
-                              (setf (http-body http) body))
                             (when body-callback
                               (funcall (the function body-callback) body))
                             (when multipart-parser

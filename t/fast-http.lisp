@@ -488,21 +488,21 @@
 
 (subtest "*body-buffer-limit*")
 (let ((*request-body-limit* 10))
-  (ok (funcall (make-parser (make-http-request) :store-body t)
+  (ok (funcall (make-parser (make-http-request) :body-callback (lambda (data) (declare (ignore data))))
                (bv (str #?"GET / HTTP/1.1\r\n"
                         #?"Content-Type: text/plain\r\n"
                         #?"Content-Length: 6\r\n"
                         #?"\r\n"
                         "foobar")))
       "normal request")
-  (ok (funcall (make-parser (make-http-request) :store-body t)
+  (ok (funcall (make-parser (make-http-request) :body-callback (lambda (data) (declare (ignore data))))
                (bv (str #?"GET / HTTP/1.1\r\n"
                         #?"Content-Type: text/plain\r\n"
                         #?"Content-Length: 10\r\n"
                         #?"\r\n"
                         "foobarfoob")))
       "normal request")
-  (is-error (funcall (make-parser (make-http-request) :store-body t)
+  (is-error (funcall (make-parser (make-http-request) :body-callback (lambda (data) (declare (ignore data))))
                      (bv (str #?"GET / HTTP/1.1\r\n"
                               #?"Content-Type: text/plain\r\n"
                               #?"Content-Length: 12\r\n"
