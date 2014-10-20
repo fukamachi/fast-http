@@ -195,19 +195,24 @@
                         (named-lambda body-cb (parser data start end)
                           (declare (ignore parser)
                                    (type simple-byte-vector data))
-                          (cond
-                            (chunked
-                             (let ((chunk-data (subseq data start end)))
-                               (when body-callback
-                                 (funcall (the function body-callback) chunk-data))
-                               (when multipart-parser
-                                 (funcall (the function multipart-parser) chunk-data))))
-                            ((numberp content-length)
-                             (let ((body (subseq data start end)))
-                               (when body-callback
-                                 (funcall (the function body-callback) body))
-                               (when multipart-parser
-                                 (funcall (the function multipart-parser) body)))))))
+                          (flet ((get-data (data start end)
+                                   (if (and (zerop start)
+                                            (= end (length data)))
+                                       data
+                                       (subseq data start end))))
+                            (cond
+                              (chunked
+                               (let ((chunk-data (get-data data start end)))
+                                 (when body-callback
+                                   (funcall (the function body-callback) chunk-data))
+                                 (when multipart-parser
+                                   (funcall (the function multipart-parser) chunk-data))))
+                              ((numberp content-length)
+                               (let ((body (get-data data start end)))
+                                 (when body-callback
+                                   (funcall (the function body-callback) body))
+                                 (when multipart-parser
+                                   (funcall (the function multipart-parser) body))))))))
              :message-complete (named-lambda message-complete-cb (parser)
                                  (declare (ignore parser))
                                  (collect-prev-header-value)
