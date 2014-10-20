@@ -28,6 +28,7 @@ The API is quite similar to [http-parse](https://github.com/orthecreedence/http-
 * `http` doesn't have `:store-body` option because it can consume much memory.
 * `body-callback` for `make-parser` and `make-multipart-parser` doesn't take a flag `body-complete-p`.
   * Use `finish-callback` to know if the parsing is finished.
+* `:multipart-callback` of `make-parser` and `:callback` of `make-multipart-parser` takes a stream, not a body octet vector at the 4th argument.
 * Raises errors aggressively while parsing.
   * Handle `fast-http-error` as you needed.
 * Doesn't use a property list as a representation of HTTP headers. (See [issue #1](https://github.com/fukamachi/fast-http/issues/1))
