@@ -4,7 +4,8 @@
         :fast-http
         :fast-http-test.test-utils
         :prove
-        :babel)
+        :babel
+        :xsubseq)
   (:import-from :alexandria
                 :ensure-list))
 (in-package :fast-http-test)
@@ -14,7 +15,9 @@
 (plan nil)
 
 (defun is-request-or-response (type chunks headers body description)
-  (let* (got-headers got-body finishedp
+  (let* (got-headers
+         (got-body nil)
+         finishedp
          headers-test-done-p body-test-done-p
          (chunks (ensure-list chunks))
          (length (length chunks))
@@ -22,7 +25,10 @@
                                 (:request (make-http-request))
                                 (:response (make-http-response)))
                               :header-callback (lambda (h) (setf got-headers h))
-                              :body-callback (lambda (b) (setf got-body b))
+                              :body-callback (lambda (b)
+                                               (unless got-body
+                                                 (setf got-body (make-concatenated-xsubseqs)))
+                                               (xnconcf got-body (xsubseq b 0)))
                               :finish-callback (lambda () (setf finishedp t)))))
     (subtest description
       (loop for i from 1
@@ -42,7 +48,8 @@
                    (setf headers-test-done-p t))
                  (when (and completedp
                             (not body-test-done-p))
-                   (is got-body body "body" :test #'equalp)
+                   (is (and got-body
+                            (coerce-to-sequence got-body)) body "body" :test #'equalp)
                    (setf body-test-done-p t)))))))
 
 (defun is-request (chunks headers body description)
@@ -467,48 +474,5 @@
                :connection "close")
              nil
              "no Content-Length response")
-
-
-;;
-;; Others
-
-(let ((req (make-http-request)))
-  (is (funcall (make-parser req
-                            :body-callback (lambda (body)
-                                             (declare (ignore body))
-                                             (error "No body")))
-               (bv (str #?"POST / HTTP/1.1\r\n"
-                        #?"Host: www.example.com\r\n"
-                        #?"Content-Type: application/x-www-form-urlencoded\r\n"
-                        #?"Content-Length: 8\r\n"
-                        #?"\r\n"
-                        #?"q=42\r\n")))
-      nil
-      "Return NIL when the body length is less than content-length"))
-
-(subtest "*body-buffer-limit*")
-(let ((*request-body-limit* 10))
-  (ok (funcall (make-parser (make-http-request) :body-callback (lambda (data) (declare (ignore data))))
-               (bv (str #?"GET / HTTP/1.1\r\n"
-                        #?"Content-Type: text/plain\r\n"
-                        #?"Content-Length: 6\r\n"
-                        #?"\r\n"
-                        "foobar")))
-      "normal request")
-  (ok (funcall (make-parser (make-http-request) :body-callback (lambda (data) (declare (ignore data))))
-               (bv (str #?"GET / HTTP/1.1\r\n"
-                        #?"Content-Type: text/plain\r\n"
-                        #?"Content-Length: 10\r\n"
-                        #?"\r\n"
-                        "foobarfoob")))
-      "normal request")
-  (is-error (funcall (make-parser (make-http-request) :body-callback (lambda (data) (declare (ignore data))))
-                     (bv (str #?"GET / HTTP/1.1\r\n"
-                              #?"Content-Type: text/plain\r\n"
-                              #?"Content-Length: 12\r\n"
-                              #?"\r\n"
-                              "foobarfoobar")))
-            'request-body-too-large
-            "Raise REQUEST-BODY-TOO-LARGE if the body is large"))
 
 (finalize)

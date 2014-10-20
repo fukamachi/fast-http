@@ -3,8 +3,6 @@
   (:use :cl)
   (:export :fast-http-error
 
-           :request-body-too-large
-
            :callback-error
            :cb-message-begin
            :cb-url
@@ -54,15 +52,6 @@
   (:report
    (lambda (condition stream)
      (format stream "~A: ~A" (type-of condition) (slot-value condition 'description)))))
-
-(define-condition request-body-too-large (fast-http-error)
-  ((limit :initarg :limit
-          :initform nil))
-  (:report
-   (lambda (condition stream)
-     (format stream "HTTP body length has exceeded ~:[the limit~;~:*~A~]" (slot-value condition 'limit))))
-  (:documentation "Raise when the HTTP body exceeded the limit.
-If you'd like to take more request body, raise the limit *request-body-limit* or just set it NIL (no limitation)."))
 
 
 ;;

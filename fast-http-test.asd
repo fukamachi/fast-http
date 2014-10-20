@@ -13,6 +13,7 @@
   :depends-on (:fast-http
                :babel
                :cl-syntax-interpol
+               :xsubseq
                :prove)
   :components ((:module "t"
                 :components

@@ -18,16 +18,13 @@
            :http-method
            :http-resource
            :http-status
-           :http-status-text
-
-           :http-force-stream))
+           :http-status-text))
 (in-package :fast-http.http)
 
 (defstruct http
   "Base structure class extended by HTTP-REQUEST and HTTP-RESPONSE."
   version
   headers
-  force-stream
   body)
 
 (defstruct (http-request (:include http)

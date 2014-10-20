@@ -30,7 +30,6 @@
            :http-response-p
            :http-version
            :http-headers
-           :http-force-stream
            :http-body
            :http-method
            :http-resource
@@ -38,8 +37,6 @@
            :http-status-text
 
            :make-multipart-parser
-
-           :*request-body-limit*
 
            ;; Low-level parser API
            :http-parse
@@ -61,8 +58,6 @@
 
            ;; Error
            :fast-http-error
-
-           :request-body-too-large
 
            :callback-error
            :cb-message-begin
@@ -108,10 +103,6 @@
            :invalid-parameter-value))
 (in-package :fast-http)
 
-(defvar *request-body-limit* nil
-  "The limit length of HTTP request body. If this is NIL (default), there's no limitation.
-If the request is chunked or :force-stream option of the HTTP object, the limit is only applied for each callback.")
-
 (defun make-parser (http &key first-line-callback header-callback body-callback finish-callback multipart-callback)
   "Returns a lambda function that takes a simple-byte-vector and parses it as an HTTP request/response."
   (declare (optimize (speed 3) (safety 2)))
@@ -125,7 +116,6 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
          (chunked nil)
          (content-length nil)
          (content-type nil)
-         (body-bytes (make-concatenated-xsubseqs)) ;; for chunking
 
          (responsep (http-response-p http))
          (parser (make-ll-parser :type (if responsep :response :request)))
@@ -181,11 +171,6 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                                               "chunked")
                                        content-length (gethash "content-length" headers)
                                        content-type (gethash "content-type" headers))
-                                 (when (and (not responsep)
-                                            content-length
-                                            *request-body-limit*
-                                            (< *request-body-limit* content-length))
-                                   (error 'request-body-too-large :limit *request-body-limit*))
                                  (setq header-value-buffer nil)
                                  (setf (http-headers http) headers)
                                  (when header-callback
@@ -210,11 +195,19 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
                         (named-lambda body-cb (parser data start end)
                           (declare (ignore parser)
                                    (type simple-byte-vector data))
-                          (xnconcf body-bytes (xsubseq (the simple-byte-vector data) start end))
-                          (when (and (not responsep)
-                                     *request-body-limit*
-                                     (< *request-body-limit* (xlength body-bytes)))
-                            (error 'request-body-too-large :limit *request-body-limit*))))
+                          (cond
+                            (chunked
+                             (let ((chunk-data (subseq data start end)))
+                               (when body-callback
+                                 (funcall (the function body-callback) chunk-data))
+                               (when multipart-parser
+                                 (funcall (the function multipart-parser) chunk-data))))
+                            ((numberp content-length)
+                             (let ((body (subseq data start end)))
+                               (when body-callback
+                                 (funcall (the function body-callback) body))
+                               (when multipart-parser
+                                 (funcall (the function multipart-parser) body)))))))
              :message-complete (named-lambda message-complete-cb (parser)
                                  (declare (ignore parser))
                                  (collect-prev-header-value)
@@ -226,39 +219,10 @@ If the request is chunked or :force-stream option of the HTTP object, the limit 
            (when finish-callback
              (funcall (the function finish-callback))))
           (T (http-parse parser callbacks (the simple-byte-vector data) :start start :end end)
-             (when (and (or body-callback
-                            multipart-parser)
-                        header-complete-p)
-               ;; body-callback
-               (cond
-                 (chunked
-                  (let ((body (coerce-to-sequence body-bytes)))
-                    (when (or body-callback multipart-parser)
-                      (let ((chunk-data body))
-                        (when body-callback
-                          (funcall (the function body-callback) chunk-data))
-                        (when multipart-parser
-                          (funcall (the function multipart-parser) chunk-data)))))
-                  (setq body-bytes (make-concatenated-xsubseqs)))
-                 ((numberp content-length)
-                  (if (http-force-stream http)
-                      (when (or body-callback multipart-parser)
-                        (let ((body (coerce-to-sequence body-bytes)))
-                          (when body-callback
-                            (funcall (the function body-callback) body))
-                          (when multipart-parser
-                            (funcall (the function multipart-parser) body))
-                          (setq body-bytes (make-concatenated-xsubseqs))))
-                      (if (<= content-length (xlength body-bytes))
-                          (let ((body (coerce-to-sequence body-bytes)))
-                            (when body-callback
-                              (funcall (the function body-callback) body))
-                            (when multipart-parser
-                              (funcall (the function multipart-parser) body)))
-                          (return-from http-parser-execute nil))))
-                 (T
-                  ;; No Content-Length, no chunking, probably a request with no body
-                  (setq completedp t))))
+             (when (and header-complete-p
+                        (not chunked)
+                        (not (numberp content-length)))
+               (setq completedp t))
              (when (and completedp finish-callback)
                (funcall (the function finish-callback)))))
         (values http header-complete-p completedp)))))

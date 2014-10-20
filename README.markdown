@@ -24,7 +24,8 @@ The API is quite similar to [http-parse](https://github.com/orthecreedence/http-
 ## API differences from http-parse
 
 * `http`, `http-request` and `http-response` are structure classes, not standard classes.
-* Doesn't have `:store-body` option because it can consume much memory.
+* `http` doesn't have `:force-stream` option. (always streaming)
+* `http` doesn't have `:store-body` option because it can consume much memory.
 * `body-callback` for `make-parser` and `make-multipart-parser` doesn't take a flag `body-complete-p`.
   * Use `finish-callback` to know if the parsing is finished.
 * Raises errors aggressively while parsing.
