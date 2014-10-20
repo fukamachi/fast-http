@@ -19,7 +19,11 @@
                :cl-utilities
                :babel
                :xsubseq
-               :log4cl)
+               :log4cl
+
+               ;; for body-buffer
+               :cl-fad
+               :flexi-streams)
   :components ((:module "src"
                 :components
                 ((:file "fast-http" :depends-on ("http" "parser" "unparser" "multipart-parser" "byte-vector" "error"))
@@ -29,6 +33,7 @@
                  (:file "multipart-parser" :depends-on ("parser" "byte-vector" "error"))
                  (:file "byte-vector")
                  (:file "url" :depends-on ("variables" "util"))
+                 (:file "body-buffer" :depends-on ("error"))
                  (:file "variables")
                  (:file "error")
                  (:file "util" :depends-on ("error")))))
