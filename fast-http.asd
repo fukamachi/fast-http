@@ -26,7 +26,7 @@
                :flexi-streams)
   :components ((:module "src"
                 :components
-                ((:file "fast-http" :depends-on ("http" "parser" "unparser" "multipart-parser" "byte-vector" "error"))
+                ((:file "fast-http" :depends-on ("http" "parser" "unparser" "multipart-parser" "body-buffer" "byte-vector" "error"))
                  (:file "http")
                  (:file "parser"  :depends-on ("byte-vector" "url" "variables" "error" "util"))
                  (:file "unparser" :depends-on ("http"))

@@ -5,6 +5,7 @@
         :fast-http.parser
         :fast-http.unparser
         :fast-http.multipart-parser
+        :fast-http.body-buffer
         :fast-http.byte-vector
         :fast-http.error
         :xsubseq)
@@ -263,7 +264,7 @@
           parsing-header-field
           field-meta
           header-value-buffer
-          (body-bytes (make-concatenated-xsubseqs))
+          (body-buffer (make-body-buffer))
           callbacks)
       (flet ((collect-prev-header-value ()
                (when header-value-buffer
@@ -310,13 +311,13 @@
                                             (gethash "name" field-meta)
                                             headers
                                             field-meta
-                                            (coerce-to-sequence body-bytes))
+                                            (finalize-buffer body-buffer))
                                    (setq headers (make-hash-table :test 'equal)
-                                         body-bytes (make-concatenated-xsubseqs)
+                                         body-buffer (make-body-buffer)
                                          header-value-buffer nil))
                :body (lambda (parser data start end)
                        (declare (ignore parser))
-                       (xnconcf body-bytes (xsubseq data start end))))))
+                       (write-to-buffer body-buffer data start end)))))
       (lambda (data)
         (http-multipart-parse parser callbacks data)
         (= (ll-multipart-parser-state parser) +body-done+)))))

@@ -28,7 +28,9 @@
 
 (defun make-body-buffer (&rest initargs &key memory-limit disk-limit &allow-other-keys)
   (let ((buffer (apply #'%make-body-buffer initargs)))
-    (when (< disk-limit memory-limit)
+    (when (and memory-limit
+               disk-limit
+               (< disk-limit memory-limit))
       (setf (buffer-memory-limit buffer) disk-limit))
     buffer))
 
@@ -65,7 +67,10 @@
 
 (defun finalize-buffer (buffer)
   (if (buffer-on-memory-p buffer)
-      (flex:make-in-memory-input-stream (coerce-to-sequence (buffer-memory-buffer buffer)))
+      (flex:make-in-memory-input-stream
+       (typecase (buffer-memory-buffer buffer)
+         (null-concatenated-xsubseqs #())
+         (T (coerce-to-sequence (buffer-memory-buffer buffer)))))
       (let ((stream (buffer-disk-buffer buffer)))
         (file-position stream 0)
         stream)))

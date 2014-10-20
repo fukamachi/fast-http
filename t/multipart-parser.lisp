@@ -5,6 +5,7 @@
         :fast-http.multipart-parser
         :fast-http.parser
         :fast-http-test.test-utils
+        :xsubseq
         :prove)
   (:import-from :cl-utilities
                 :collecting
@@ -124,14 +125,23 @@
                 "multiline header value")
 
 
+(defun slurp-stream (stream)
+  (with-xsubseqs (xsub)
+    (let ((buffer (make-array 1024 :element-type '(unsigned-byte 8))))
+      (loop for bytes-read = (read-sequence buffer stream)
+            do (xnconcf xsub (xsubseq buffer 0 bytes-read))
+            while (= bytes-read 1024)))))
+
 (defun test-parser (content-type data expected &optional description)
   (let ((got (collecting
-               (let ((parser (make-multipart-parser content-type
-                                                    (lambda (field-name headers field-meta body)
-                                                      (collect (list field-name
-                                                                     headers
-                                                                     field-meta
-                                                                     (babel:octets-to-string body)))))))
+               (let ((parser
+                       (make-multipart-parser content-type
+                                              (lambda (field-name headers field-meta body)
+                                                (setf body (slurp-stream body))
+                                                (collect (list field-name
+                                                               headers
+                                                               field-meta
+                                                               (babel:octets-to-string body)))))))
                  (funcall parser data)))))
     (flet ((hash-table-equal (hash plist desc)
              (subtest desc
@@ -251,7 +261,7 @@
                 "multipart/form-data; boundary=\"---------------------------186454651713519341951581030105\""
                 (lambda (field-name headers field-meta body)
                   (declare (ignore field-name headers field-meta))
-                  (setf got-body body)))))
+                  (setf got-body (slurp-stream body))))))
   (is (funcall parser
                (bv (str #?"-----------------------------186454651713519341951581030105\r\n"
                         #?"Content-Disposition: form-data;\r\n"
@@ -271,7 +281,7 @@
                 "multipart/form-data; boundary=\"---------------------------186454651713519341951581030105\""
                 (lambda (field-name headers field-meta body)
                   (declare (ignore field-name headers field-meta))
-                  (setf got-body body)))))
+                  (setf got-body (slurp-stream body))))))
   (is (funcall parser
                (bv (str #?"-----------------------------186454651713519341951581030105\r\n"
                         #?"Content-Disposition: form-data;\r\n"
