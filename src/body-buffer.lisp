@@ -4,7 +4,7 @@
         :xsubseq
         :fast-http.error)
   (:export :*default-memory-limit*
-           :default-disk-limit*
+           :*default-disk-limit*
            :make-body-buffer
            :buffer-memory-limit
            :buffer-disk-limit

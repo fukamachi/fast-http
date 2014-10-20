@@ -57,6 +57,11 @@
            ;; unparser
            :http-unparse
 
+           ;; body-buffer
+           :*default-memory-limit*
+           :*default-disk-limit*
+           :body-buffer-limit-exceeded
+
            ;; Error
            :fast-http-error
 
