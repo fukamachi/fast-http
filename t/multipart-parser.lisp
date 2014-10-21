@@ -124,6 +124,68 @@
                    :body #?"Test text\n with\r\n ümläuts!"))
                 "multiline header value")
 
+(let ((parser (make-ll-multipart-parser :boundary "AaB03x"))
+      (callbacks (make-ll-callbacks
+                  :body (lambda (parser data start end)
+                          (declare (ignore parser))
+                          (princ (babel:octets-to-string data :start start :end end))))))
+  (flet ((parse (body)
+           (http-multipart-parse parser callbacks body)))
+    (is-print (parse (bv (str #?"--AaB03x\r\n"
+                              #?"Content-Disposition: form-data; name=\"field1\"\r\n"
+                              #?"\r\n"
+                              #?"Joe Blow\r\nalmost tricked you!\r\n")))
+              #?"Joe Blow\r\nalmost tricked you!")
+    (is-print (parse (bv #?"--AaB03x\r\n")) "")))
+
+(let ((parser (make-ll-multipart-parser :boundary "AaB03x"))
+      (callbacks (make-ll-callbacks
+                  :body (lambda (parser data start end)
+                          (declare (ignore parser))
+                          (princ (babel:octets-to-string data :start start :end end))))))
+  (flet ((parse (body)
+           (http-multipart-parse parser callbacks body)))
+    (is-print (parse (bv (str #?"--AaB03x\r\n"
+                              #?"Content-Disposition: form-data; name=\"field1\"\r\n"
+                              #?"\r\n"
+                              #?"Joe Blow\r\nalmost tricked you!\r\n")))
+              #?"Joe Blow\r\nalmost tricked you!")
+    (is-print (parse (bv #?"--Aa")) "")
+    (is-print (parse (bv #?"B03x\r\n"))
+              #?"")))
+
+(let ((parser (make-ll-multipart-parser :boundary "AaB03x"))
+      (callbacks (make-ll-callbacks
+                  :body (lambda (parser data start end)
+                          (declare (ignore parser))
+                          (princ (babel:octets-to-string data :start start :end end))))))
+  (flet ((parse (body)
+           (http-multipart-parse parser callbacks body)))
+    (is-print (parse (bv (str #?"--AaB03x\r\n"
+                              #?"Content-Disposition: form-data; name=\"field1\"\r\n"
+                              #?"\r\n"
+                              #?"Joe Blow\r\nalmost tricked you!\r\n")))
+              #?"Joe Blow\r\nalmost tricked you!")
+    (is-print (parse (bv #?"--Aa")) "")
+    (is-print (parse (bv #?"BbCc\r\n"))
+              #?"\r\n--AaBbCc")))
+
+(let ((parser (make-ll-multipart-parser :boundary "AaB03x"))
+      (callbacks (make-ll-callbacks
+                  :body (lambda (parser data start end)
+                          (declare (ignore parser))
+                          (princ (babel:octets-to-string data :start start :end end))))))
+  (flet ((parse (body)
+           (http-multipart-parse parser callbacks body)))
+    (is-print (parse (bv (str #?"--AaB03x\r\n"
+                              #?"Content-Disposition: form-data; name=\"field1\"\r\n"
+                              #?"\r\n"
+                              #?"Joe Blow\r\nalmost tricked you!\r\n")))
+              #?"Joe Blow\r\nalmost tricked you!")
+    (is-print (parse (bv "--Aa")) "")
+    (is-print (parse (bv "B03x")) "")
+    (is-print (parse (bv "C")) #?"\r\n--AaB03xC")))
+
 
 (defun slurp-stream (stream)
   (with-xsubseqs (xsub)

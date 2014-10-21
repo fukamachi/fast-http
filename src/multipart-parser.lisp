@@ -67,21 +67,30 @@
     (when (= start end)
       (return-from http-multipart-parse start))
 
-    (macrolet ((call-body-cb (&optional (end '(ll-multipart-parser-boundary-mark parser)))
+    (macrolet ((with-body-cb (callback &body body)
+                 `(handler-case (when-let (,callback (ll-callbacks-body callbacks))
+                                  ,@body)
+                    (error (e)
+                      (error 'cb-body :error e))))
+               (call-body-cb (&optional (end '(ll-multipart-parser-boundary-mark parser)))
                  (let ((g-end (gensym "END")))
-                   `(handler-case
-                        (when-let (callback (ll-callbacks-body callbacks))
-                          (when (ll-multipart-parser-body-buffer parser)
-                            (funcall callback parser
-                                     (ll-multipart-parser-body-buffer parser)
-                                     0 (length (ll-multipart-parser-body-buffer parser)))
-                            (setf (ll-multipart-parser-body-buffer parser) nil))
-                          (when-let (,g-end ,end)
-                            (funcall callback parser data
-                                     (ll-multipart-parser-body-mark parser)
-                                     ,g-end)))
-                      (error (e)
-                        (error 'cb-body :error e))))))
+                   `(with-body-cb callback
+                      (when (ll-multipart-parser-body-buffer parser)
+                        (funcall callback parser
+                                 (ll-multipart-parser-body-buffer parser)
+                                 0 (length (ll-multipart-parser-body-buffer parser)))
+                        (setf (ll-multipart-parser-body-buffer parser) nil))
+                      (when-let (,g-end ,end)
+                        (funcall callback parser data
+                                 (ll-multipart-parser-body-mark parser)
+                                 ,g-end)))))
+               (flush-boundary-buffer ()
+                 `(with-body-cb callback
+                    (when (ll-multipart-parser-boundary-buffer parser)
+                      (funcall callback parser
+                               (ll-multipart-parser-boundary-buffer parser)
+                               0 (length (ll-multipart-parser-boundary-buffer parser)))
+                      (setf (ll-multipart-parser-boundary-buffer parser) nil)))))
       (let* ((p start)
              (byte (aref data p)))
         (log:debug (code-char byte))
@@ -93,12 +102,12 @@
                                 (1 '(incf p))
                                 (otherwise `(incf p ,advance)))
                              (setf (ll-multipart-parser-state parser) ,tag)
+                             (log:debug ,(princ-to-string tag))
                              ,@(and (not (eql advance 0))
                                     `((when (= p end)
                                         (go exit-loop))
                                       (setq byte (aref data p))
-                                      (log:debug (code-char byte))
-                                      (log:debug ,(princ-to-string tag))))
+                                      (log:debug (code-char byte))))
                              (go ,tag))))
              (tagcasev (ll-multipart-parser-state parser)
                (+parsing-delimiter-dash-start+
@@ -114,29 +123,36 @@
                (+parsing-delimiter+
                 (let ((end2 (+ p boundary-length)))
                   (cond
-                    ((< end end2)
+                    ((ll-multipart-parser-boundary-buffer parser)
+                     (when (< (+ end (length (ll-multipart-parser-boundary-buffer parser)) -3) end2)
+                       (setf (ll-multipart-parser-boundary-buffer parser)
+                             (concatenate 'simple-byte-vector
+                                          (ll-multipart-parser-boundary-buffer parser)
+                                          data))
+                       (go exit-loop))
+                     (let ((data2 (make-array boundary-length :element-type '(unsigned-byte 8)))
+                           (boundary-buffer-length (length (ll-multipart-parser-boundary-buffer parser))))
+                       (replace data2 (ll-multipart-parser-boundary-buffer parser)
+                                :start2 2)
+                       (replace data2 data
+                                :start1 (- boundary-buffer-length 2))
+                       (unless (search boundary data2)
+                         ;; Still in the body
+                         (when (ll-multipart-parser-body-mark parser)
+                           (call-body-cb nil)
+                           (flush-boundary-buffer)
+                           (go-state +looking-for-delimiter+))
+                         (error 'invalid-boundary))
+                       (go-state +parsing-delimiter-end+ (- boundary-length boundary-buffer-length -2))))
+                    ((< (1- end) end2)
                      ;; EOF
                      (setf (ll-multipart-parser-boundary-buffer parser)
                            (if (ll-multipart-parser-boundary-buffer parser)
                                (concatenate 'simple-byte-vector
                                             (ll-multipart-parser-boundary-buffer parser)
-                                            (subseq data p))
-                               (subseq data p)))
+                                            (subseq data (max 0 (- p 2))))
+                               (subseq data (max 0 (- p 2)))))
                      (go exit-loop))
-                    ((ll-multipart-parser-boundary-buffer parser)
-                     (let ((data2 (make-array boundary-length :element-type '(unsigned-byte 8)))
-                           (boundary-buffer-length (length (ll-multipart-parser-boundary-buffer parser))))
-                       (replace data2 (ll-multipart-parser-boundary-buffer parser))
-                       (replace data2 data
-                                :start1 boundary-buffer-length
-                                :end2 boundary-length)
-                       (unless (search boundary data2)
-                         ;; Still in the body
-                         (when (ll-multipart-parser-body-mark parser)
-                           (go-state +looking-for-delimiter+))
-                         (error 'invalid-boundary))
-                       (setf (ll-multipart-parser-boundary-buffer parser) nil)
-                       (go-state +parsing-delimiter-end+ (- boundary-length boundary-buffer-length))))
                     (T
                      (unless (search boundary data :start2 p :end2 end2)
                        ;; Still in the body
@@ -153,6 +169,8 @@
                   (otherwise
                    ;; Still in the body
                    (when (ll-multipart-parser-body-mark parser)
+                     (call-body-cb nil)
+                     (flush-boundary-buffer)
                      (go-state +looking-for-delimiter+))
                    (error 'invalid-boundary))))
 
@@ -236,14 +254,18 @@
                 (go exit-loop))))
          exit-loop)
         (when (ll-multipart-parser-body-mark parser)
-          (unless (<= +parsing-delimiter-dash-start+
+          (when (<= +looking-for-delimiter+
                     (ll-multipart-parser-state parser)
-                    +parsing-delimiter-done+)
+                    +maybe-delimiter-second-dash+)
             (call-body-cb (or (ll-multipart-parser-boundary-mark parser) p)))
           ;; buffer the last part
           (when (ll-multipart-parser-boundary-mark parser)
             (setf (ll-multipart-parser-body-buffer parser)
-                  (subseq data (ll-multipart-parser-boundary-mark parser))))
+                  (if (ll-multipart-parser-body-buffer parser)
+                      (concatenate 'simple-byte-vector
+                                   (ll-multipart-parser-body-buffer parser)
+                                   (subseq data (ll-multipart-parser-boundary-mark parser)))
+                      (subseq data (ll-multipart-parser-boundary-mark parser)))))
 
           (setf (ll-multipart-parser-body-mark parser) 0
                 (ll-multipart-parser-boundary-mark parser) nil))
