@@ -36,7 +36,8 @@
   boundary
   body-mark
   body-buffer
-  boundary-mark)
+  boundary-mark
+  boundary-buffer)
 
 #.`(eval-when (:compile-toplevel :load-toplevel :execute)
      ,@(loop for i from 0
@@ -111,12 +112,38 @@
                 (go-state +parsing-delimiter+))
 
                (+parsing-delimiter+
-                (unless (search boundary data :start2 p :end2 (+ p boundary-length))
-                  ;; Still in the body
-                  (when (ll-multipart-parser-body-mark parser)
-                    (go-state +looking-for-delimiter+))
-                  (error 'invalid-boundary))
-                (go-state +parsing-delimiter-end+ boundary-length))
+                (let ((end2 (+ p boundary-length)))
+                  (cond
+                    ((< end end2)
+                     ;; EOF
+                     (setf (ll-multipart-parser-boundary-buffer parser)
+                           (if (ll-multipart-parser-boundary-buffer parser)
+                               (concatenate 'simple-byte-vector
+                                            (ll-multipart-parser-boundary-buffer parser)
+                                            (subseq data p))
+                               (subseq data p)))
+                     (go exit-loop))
+                    ((ll-multipart-parser-boundary-buffer parser)
+                     (let ((data2 (make-array boundary-length :element-type '(unsigned-byte 8)))
+                           (boundary-buffer-length (length (ll-multipart-parser-boundary-buffer parser))))
+                       (replace data2 (ll-multipart-parser-boundary-buffer parser))
+                       (replace data2 data
+                                :start1 boundary-buffer-length
+                                :end2 boundary-length)
+                       (unless (search boundary data2)
+                         ;; Still in the body
+                         (when (ll-multipart-parser-body-mark parser)
+                           (go-state +looking-for-delimiter+))
+                         (error 'invalid-boundary))
+                       (setf (ll-multipart-parser-boundary-buffer parser) nil)
+                       (go-state +parsing-delimiter-end+ (- boundary-length boundary-buffer-length))))
+                    (T
+                     (unless (search boundary data :start2 p :end2 end2)
+                       ;; Still in the body
+                       (when (ll-multipart-parser-body-mark parser)
+                         (go-state +looking-for-delimiter+))
+                       (error 'invalid-boundary))
+                     (go-state +parsing-delimiter-end+ boundary-length)))))
 
                (+parsing-delimiter-end+
                 (casev byte
