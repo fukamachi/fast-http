@@ -239,12 +239,13 @@
 
                (+body-almost-done+
                 (casev byte
-                  (+dash+ (go-state +body-done+))
+                  (+dash+ (go-state +body-done+ 0))
                   (otherwise (error 'invalid-multipart-body))))
 
                (+body-done+
                 (when (ll-multipart-parser-body-mark parser)
                   ;; got a part
+                  (setf (ll-multipart-parser-body-buffer parser) nil)
                   (call-body-cb)
                   (when-let (callback (ll-callbacks-message-complete callbacks))
                     (handler-case (funcall callback parser)
