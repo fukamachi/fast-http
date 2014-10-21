@@ -209,7 +209,10 @@
                 (go exit-loop))))
          exit-loop)
         (when (ll-multipart-parser-body-mark parser)
-          (call-body-cb (or (ll-multipart-parser-boundary-mark parser) p))
+          (unless (<= +parsing-delimiter-dash-start+
+                    (ll-multipart-parser-state parser)
+                    +parsing-delimiter-done+)
+            (call-body-cb (or (ll-multipart-parser-boundary-mark parser) p)))
           ;; buffer the last part
           (when (ll-multipart-parser-boundary-mark parser)
             (setf (ll-multipart-parser-body-buffer parser)
