@@ -93,6 +93,7 @@
                       (setf (ll-multipart-parser-boundary-buffer parser) nil)))))
       (let* ((p start)
              (byte (aref data p)))
+        #+fast-http-debug
         (log:debug (code-char byte))
         (tagbody
            (macrolet ((go-state (tag &optional (advance 1))
@@ -102,11 +103,13 @@
                                 (1 '(incf p))
                                 (otherwise `(incf p ,advance)))
                              (setf (ll-multipart-parser-state parser) ,tag)
+                             #+fast-http-debug
                              (log:debug ,(princ-to-string tag))
                              ,@(and (not (eql advance 0))
                                     `((when (= p end)
                                         (go exit-loop))
                                       (setq byte (aref data p))
+                                      #+fast-http-debug
                                       (log:debug (code-char byte))))
                              (go ,tag))))
              (tagcasev (ll-multipart-parser-state parser)

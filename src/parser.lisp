@@ -274,7 +274,9 @@
            ,@(and (parsing-header-p (symbol-value state))
                   `((check-header-overflow (incf (parser-header-read parser)))))
            (setq byte (aref data p))
+           #+fast-http-debug
            (log:debug (code-char byte))
+           #+fast-http-debug
            (log:debug ,(princ-to-string state))))
      (go ,state)))
 
@@ -583,7 +585,9 @@
              ((= p end))
            (declare (type pointer p))
            (let ((byte (aref data p)))
+             #+fast-http-debug
              (log:debug (code-char byte))
+             #+fast-http-debug
              (log:debug (parser-state-name parser))
              (when (parsing-header-p (parser-state parser))
                (check-header-overflow (incf (parser-header-read parser))))
