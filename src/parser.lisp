@@ -327,14 +327,14 @@
                  (go-state +state-header-field+)))))
 
            (+state-header-field+
+            (when (= byte #.(char-code #\:))
+              (setf (parser-state parser) +state-header-value-discard-ws+)
+              (callback-data parser callbacks :header-field
+                             data mark p)
+              (go-state +state-header-value-discard-ws+ 1 nil))
             (let ((char (aref +tokens+ byte)))
               (declare (type character char))
               (cond
-                ((= byte #.(char-code #\:))
-                 (setf (parser-state parser) +state-header-value-discard-ws+)
-                 (callback-data parser callbacks :header-field
-                                data mark p)
-                 (go-state +state-header-value-discard-ws+ 1 nil))
                 ((char= char #\Nul)
                  (error 'invalid-header-token))
                 (T
@@ -396,10 +396,9 @@
            ((+state-header-value-discard-ws+
              +state-header-value-start+)
             (when +state-header-value-discard-ws+
-              (when (or (= byte +space+)
-                        (= byte +tab+))
-                (go-state +state-header-value-discard-ws+ 1 nil))
               (casev= byte
+                ((+space+ +tab+)
+                 (go-state +state-header-value-discard-ws+ 1 nil))
                 (+cr+
                  (go-state +state-header-value-discard-ws-almost-done+))
                 (+lf+
