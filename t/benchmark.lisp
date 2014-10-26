@@ -28,7 +28,7 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *profile-packages*
-    '("FAST-HTTP" "FAST-HTTP.PARSER" "FAST-HTTP.BYTE-VECTOR" "FAST-HTTP.SUBSEQS" "FAST-HTTP.URL" "FAST-HTTP.ERROR" "FAST-HTTP.UTIL")))
+    '("FAST-HTTP" "FAST-HTTP.PARSER" "FAST-HTTP.BYTE-VECTOR" "FAST-HTTP.URL" "FAST-HTTP.ERROR" "FAST-HTTP.UTIL")))
 
 #+sbcl
 (defun run-ll-profile ()
