@@ -28,6 +28,7 @@
   (* 80 1024))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
+  (declaim (type (unsigned-byte 64) +max-content-length+))
   (defconstant +max-content-length+
     (1- (expt 2 64))))
 
@@ -171,11 +172,12 @@
         (setf (parser-header-state ,parser) ,state)))))
 
 (defun http-message-needs-eof-p (parser)
-  (declare (optimize (speed 3) (safety 0)))
+  (declare (optimize (speed 3) (safety 2)))
   (when (eq (parser-type parser) :request)
     (return-from http-message-needs-eof-p nil))
 
   (let ((status-code (parser-status-code parser)))
+    (declare (type status-code status-code))
     ;; See RFC 2616 section 4.4
     (when (or (< 99 status-code 200) ;; 1xx e.g. Continue
               (= status-code 204)    ;; No Content
