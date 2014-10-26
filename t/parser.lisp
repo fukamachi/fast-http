@@ -110,7 +110,7 @@
 ;; Requests
 
 (is-error (test-simple #?"GET / HTP/1.1\r\n\r\n")
-          'strict-error
+          'invalid-version
           "Invalid version")
 
 (ok (test-simple #?"GET / HTTP/1.1\r\n"
