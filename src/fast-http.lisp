@@ -224,7 +224,7 @@
                                  (collect-prev-header-value)
                                  (setq completedp t)))))
     (return-from make-parser
-      (named-lambda http-parser-execute (data &key (start 0) (end (length data)))
+      (named-lambda http-parser-execute (data &key (start 0) end)
         (cond
           ((eql data :eof)
            (when finish-callback
