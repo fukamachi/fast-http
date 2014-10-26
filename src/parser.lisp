@@ -284,265 +284,266 @@
 ;;
 ;; Main
 
-(defun http-parse-headers (parser callbacks data &key (start 0) (end (length data)))
+(defun http-parse-headers (parser callbacks data &key (start 0) end)
   (declare (type simple-byte-vector data)
-           (type pointer start end)
+           (type pointer start)
            (optimize (speed 3) (safety 2)))
-  (let ((mark (init-mark (parser-mark parser))))
-    (let* ((p start)
-           (byte (aref data p)))
-      (declare (type pointer p)
-               (type (unsigned-byte 8) byte))
+  (let* ((end (or end (length data)))
+         (mark (init-mark (parser-mark parser)))
+         (p start)
+         (byte (aref data p)))
+    (declare (type pointer end p)
+             (type (unsigned-byte 8) byte))
 
-      (tagbody
-         (tagcasev= (parser-state parser)
+    (tagbody
+       (tagcasev= (parser-state parser)
 
-           (+state-header-field-start+
-            (casev= byte
-              (+cr+
-               (go-state +state-headers-almost-done+))
-              (+lf+
-               ;; they might be just sending \n instead of \r\n so this would be
-               ;; the second \n to denote the end of headers
-               (go-state +state-headers-almost-done+ 0))
-              (otherwise
-               (let ((char (aref +tokens+ byte)))
-                 (declare (type character char))
-                 (when (char= char #\Nul)
-                   (error 'invalid-header-token))
-
-                 (set-mark mark :header-field p)
-                 (setf (parser-index parser) 0)
-
-                 (setf (parser-header-state parser)
-                       (case char
-                         (#\c
-                          +header-state-C+)
-                         (#\p
-                          +header-state-matching-proxy-connection+)
-                         (#\t
-                          +header-state-matching-transfer-encoding+)
-                         (#\u
-                          +header-state-matching-upgrade+)
-                         (otherwise
-                          +header-state-general+)))
-                 (go-state +state-header-field+)))))
-
-           (+state-header-field+
-            (when (= byte #.(char-code #\:))
-              (setf (parser-state parser) +state-header-value-discard-ws+)
-              (callback-data parser callbacks :header-field
-                             data mark p)
-              (go-state +state-header-value-discard-ws+ 1 nil))
-            (let ((char (aref +tokens+ byte)))
-              (declare (type character char))
-              (cond
-                ((char= char #\Nul)
+         (+state-header-field-start+
+          (casev= byte
+            (+cr+
+             (go-state +state-headers-almost-done+))
+            (+lf+
+             ;; they might be just sending \n instead of \r\n so this would be
+             ;; the second \n to denote the end of headers
+             (go-state +state-headers-almost-done+ 0))
+            (otherwise
+             (let ((char (aref +tokens+ byte)))
+               (declare (type character char))
+               (when (char= char #\Nul)
                  (error 'invalid-header-token))
-                (T
-                 (casev= (parser-header-state parser)
-                   (+header-state-general+
-                    (go-state +state-header-field+))
-                   (+header-state-C+
-                    (incf (parser-index parser))
-                    (setf (parser-header-state parser)
-                          (if (char= char #\o)
-                              +header-state-CO+
-                              +header-state-general+))
-                    (go-state +state-header-field+))
-                   (+header-state-CO+
-                    (incf (parser-index parser))
-                    (setf (parser-header-state parser)
-                          (if (char= char #\n)
-                              +header-state-CON+
-                              +header-state-general+))
-                    (go-state +state-header-field+))
-                   (+header-state-CON+
-                    (incf (parser-index parser))
 
-                    (setf (parser-header-state parser)
-                          (case char
-                            (#\n +header-state-matching-connection+)
-                            (#\t +header-state-matching-content-length+)
-                            (otherwise +header-state-general+)))
-                    (go-state +state-header-field+))
-                   (+header-state-matching-connection+
-                    (incf (parser-index parser))
-                    (looking-for parser char +connection+ +header-state-connection+)
-                    (go-state +state-header-field+))
-                   (+header-state-matching-proxy-connection+
-                    (incf (parser-index parser))
-                    (looking-for parser char +proxy-connection+ +header-state-connection+)
-                    (go-state +state-header-field+))
-                   (+header-state-matching-content-length+
-                    (incf (parser-index parser))
-                    (looking-for parser char +content-length+ +header-state-content-length+)
-                    (go-state +state-header-field+))
-                   (+header-state-matching-transfer-encoding+
-                    (incf (parser-index parser))
-                    (looking-for parser char +transfer-encoding+ +header-state-transfer-encoding+)
-                    (go-state +state-header-field+))
-                   (+header-state-matching-upgrade+
-                    (incf (parser-index parser))
-                    (looking-for parser char +upgrade+ +header-state-upgrade+)
-                    (go-state +state-header-field+))
-                   ((+header-state-connection+
-                     +header-state-content-length+
-                     +header-state-transfer-encoding+
-                     +header-state-upgrade+)
-                    (unless (= byte +space+)
-                      (setf (parser-header-state parser) +header-state-general+))
-                    (go-state +state-header-field+)))))))
+               (set-mark mark :header-field p)
+               (setf (parser-index parser) 0)
 
-           ((+state-header-value-discard-ws+
-             +state-header-value-start+)
-            (when +state-header-value-discard-ws+
-              (casev= byte
-                ((+space+ +tab+)
-                 (go-state +state-header-value-discard-ws+ 1 nil))
-                (+cr+
-                 (go-state +state-header-value-discard-ws-almost-done+))
-                (+lf+
-                 (go-state +state-header-value-discard-lws+))))
-
-            (set-mark mark :header-value p)
-
-            (setf (parser-index parser) 0)
-
-            (casev= (parser-header-state parser)
-              (+header-state-upgrade+
-               (setf (parser-flags parser)
-                     (logxor (parser-flags parser) +flag-upgrade+))
-               (setf (parser-header-state parser) +header-state-general+)
-               (go-state +state-header-value+))
-              (+header-state-transfer-encoding+
-               ;; looking for 'Transfer-Encoding: chunked'
                (setf (parser-header-state parser)
-                     (if (or (= byte #.(char-code #\c))
-                             (= byte #.(char-code #\C)))
-                         +header-state-matching-transfer-encoding-chunked+
-                         +header-state-general+))
-               (go-state +state-header-value+))
-              (+header-state-content-length+
-               (unless (digit-byte-char-p byte)
-                 (error 'invalid-content-length))
-               (setf (parser-content-length parser)
-                     (digit-byte-char-to-integer byte))
-               (go-state +state-header-value+))
-              (+header-state-connection+
-               (setf (parser-header-state parser)
-                     (case-byte byte
-                       ;; looking for 'Connection: keep-alive'
-                       (#\k
-                        +header-state-matching-connection-keep-alive+)
-                       ;; looking for 'Connection: close'
+                     (case char
                        (#\c
-                        +header-state-matching-connection-close+)
+                        +header-state-C+)
+                       (#\p
+                        +header-state-matching-proxy-connection+)
+                       (#\t
+                        +header-state-matching-transfer-encoding+)
+                       (#\u
+                        +header-state-matching-upgrade+)
                        (otherwise
                         +header-state-general+)))
-               (go-state +state-header-value+))
-              (otherwise
-               (setf (parser-header-state parser) +header-state-general+)
-               (go-state +state-header-value+))))
-           (+state-header-value+
-            (casev= byte
-              (+cr+
-               (setf (parser-state parser) +state-header-almost-done+)
-               (callback-data parser callbacks :header-value
-                              data mark p)
-               (go-state +state-header-almost-done+ 1 nil))
-              (+lf+
-               (setf (parser-state parser) +state-header-almost-done+)
-               (callback-data parser callbacks :header-value
-                              data mark p)
-               (go-state +state-header-almost-done+ 0 nil))
-              (otherwise
+               (go-state +state-header-field+)))))
+
+         (+state-header-field+
+          (when (= byte #.(char-code #\:))
+            (setf (parser-state parser) +state-header-value-discard-ws+)
+            (callback-data parser callbacks :header-field
+                           data mark p)
+            (go-state +state-header-value-discard-ws+ 1 nil))
+          (let ((char (aref +tokens+ byte)))
+            (declare (type character char))
+            (cond
+              ((char= char #\Nul)
+               (error 'invalid-header-token))
+              (T
                (casev= (parser-header-state parser)
                  (+header-state-general+
-                  (go-state +state-header-value+))
+                  (go-state +state-header-field+))
+                 (+header-state-C+
+                  (incf (parser-index parser))
+                  (setf (parser-header-state parser)
+                        (if (char= char #\o)
+                            +header-state-CO+
+                            +header-state-general+))
+                  (go-state +state-header-field+))
+                 (+header-state-CO+
+                  (incf (parser-index parser))
+                  (setf (parser-header-state parser)
+                        (if (char= char #\n)
+                            +header-state-CON+
+                            +header-state-general+))
+                  (go-state +state-header-field+))
+                 (+header-state-CON+
+                  (incf (parser-index parser))
+
+                  (setf (parser-header-state parser)
+                        (case char
+                          (#\n +header-state-matching-connection+)
+                          (#\t +header-state-matching-content-length+)
+                          (otherwise +header-state-general+)))
+                  (go-state +state-header-field+))
+                 (+header-state-matching-connection+
+                  (incf (parser-index parser))
+                  (looking-for parser char +connection+ +header-state-connection+)
+                  (go-state +state-header-field+))
+                 (+header-state-matching-proxy-connection+
+                  (incf (parser-index parser))
+                  (looking-for parser char +proxy-connection+ +header-state-connection+)
+                  (go-state +state-header-field+))
+                 (+header-state-matching-content-length+
+                  (incf (parser-index parser))
+                  (looking-for parser char +content-length+ +header-state-content-length+)
+                  (go-state +state-header-field+))
+                 (+header-state-matching-transfer-encoding+
+                  (incf (parser-index parser))
+                  (looking-for parser char +transfer-encoding+ +header-state-transfer-encoding+)
+                  (go-state +state-header-field+))
+                 (+header-state-matching-upgrade+
+                  (incf (parser-index parser))
+                  (looking-for parser char +upgrade+ +header-state-upgrade+)
+                  (go-state +state-header-field+))
                  ((+header-state-connection+
-                   +header-state-transfer-encoding+)
-                  (go-state +state-header-value+))
-                 (+header-state-content-length+
-                  (unless (= byte +space+)
-                    (unless (digit-byte-char-p byte)
-                      (error 'invalid-content-length))
-                    (setf (parser-content-length parser)
-                          (+ (* 10 (parser-content-length parser))
-                             (digit-byte-char-to-integer byte))))
-                  (go-state +state-header-value+))
-                 ;; Transfer-Encoding: chunked
-                 (+header-state-matching-transfer-encoding-chunked+
-                  (incf (parser-index parser))
-                  (looking-for parser (alpha-byte-char-to-lower-char byte)
-                               +chunked+ +header-state-transfer-encoding-chunked+)
-                  (go-state +state-header-value+))
-                 ;; looking for 'Connection: keep-alive'
-                 (+header-state-matching-connection-keep-alive+
-                  (incf (parser-index parser))
-                  (looking-for parser (alpha-byte-char-to-lower-char byte)
-                               +keep-alive+ +header-state-connection-keep-alive+)
-                  (go-state +state-header-value+))
-                 ;; looking for 'Connection: close'
-                 (+header-state-matching-connection-close+
-                  (incf (parser-index parser))
-                  (looking-for parser (alpha-byte-char-to-lower-char byte)
-                               +close+ +header-state-connection-close+)
-                  (go-state +state-header-value+))
-                 ((+header-state-transfer-encoding-chunked+
-                   +header-state-connection-keep-alive+
-                   +header-state-connection-close+)
+                   +header-state-content-length+
+                   +header-state-transfer-encoding+
+                   +header-state-upgrade+)
                   (unless (= byte +space+)
                     (setf (parser-header-state parser) +header-state-general+))
-                  (go-state +state-header-value+))
-                 (otherwise
-                  (setf (parser-header-state parser) +header-state-general+)
-                  (go-state +state-header-value+))))))
+                  (go-state +state-header-field+)))))))
 
-           (+state-header-almost-done+
-            (check-strictly (= byte +lf+))
-            (go-state +state-header-value-lws+))
+         ((+state-header-value-discard-ws+
+           +state-header-value-start+)
+          (when +state-header-value-discard-ws+
+            (casev= byte
+              ((+space+ +tab+)
+               (go-state +state-header-value-discard-ws+ 1 nil))
+              (+cr+
+               (go-state +state-header-value-discard-ws-almost-done+))
+              (+lf+
+               (go-state +state-header-value-discard-lws+))))
 
-           (+state-header-value-lws+
-            (when (or (= byte +space+)
-                      (= byte +tab+))
-              (set-mark mark :header-value p)
-              (go-state +state-header-value-start+ 0))
-            ;; finished the header
-            (casev= (parser-header-state parser)
-              (+header-state-connection-keep-alive+
-               (setf (parser-flags parser)
-                     (logxor (parser-flags parser) +flag-connection-keep-alive+)))
-              (+header-state-connection-close+
-               (setf (parser-flags parser)
-                     (logxor (parser-flags parser) +flag-connection-close+)))
-              (+header-state-transfer-encoding-chunked+
-               (setf (parser-flags parser)
-                     (logxor (parser-flags parser) +flag-chunked+))))
-            (go-state +state-header-field-start+ 0))
+          (set-mark mark :header-value p)
 
-           (+state-header-value-discard-ws-almost-done+
-            (check-strictly (= byte +lf+))
-            (go-state +state-header-value-discard-lws+))
+          (setf (parser-index parser) 0)
 
-           (+state-header-value-discard-lws+
-            (if (or (= byte +space+)
+          (casev= (parser-header-state parser)
+            (+header-state-upgrade+
+             (setf (parser-flags parser)
+                   (logxor (parser-flags parser) +flag-upgrade+))
+             (setf (parser-header-state parser) +header-state-general+)
+             (go-state +state-header-value+))
+            (+header-state-transfer-encoding+
+             ;; looking for 'Transfer-Encoding: chunked'
+             (setf (parser-header-state parser)
+                   (if (or (= byte #.(char-code #\c))
+                           (= byte #.(char-code #\C)))
+                       +header-state-matching-transfer-encoding-chunked+
+                       +header-state-general+))
+             (go-state +state-header-value+))
+            (+header-state-content-length+
+             (unless (digit-byte-char-p byte)
+               (error 'invalid-content-length))
+             (setf (parser-content-length parser)
+                   (digit-byte-char-to-integer byte))
+             (go-state +state-header-value+))
+            (+header-state-connection+
+             (setf (parser-header-state parser)
+                   (case-byte byte
+                     ;; looking for 'Connection: keep-alive'
+                     (#\k
+                      +header-state-matching-connection-keep-alive+)
+                     ;; looking for 'Connection: close'
+                     (#\c
+                      +header-state-matching-connection-close+)
+                     (otherwise
+                      +header-state-general+)))
+             (go-state +state-header-value+))
+            (otherwise
+             (setf (parser-header-state parser) +header-state-general+)
+             (go-state +state-header-value+))))
+         (+state-header-value+
+          (casev= byte
+            (+cr+
+             (setf (parser-state parser) +state-header-almost-done+)
+             (callback-data parser callbacks :header-value
+                            data mark p)
+             (go-state +state-header-almost-done+ 1 nil))
+            (+lf+
+             (setf (parser-state parser) +state-header-almost-done+)
+             (callback-data parser callbacks :header-value
+                            data mark p)
+             (go-state +state-header-almost-done+ 0 nil))
+            (otherwise
+             (casev= (parser-header-state parser)
+               (+header-state-general+
+                (go-state +state-header-value+))
+               ((+header-state-connection+
+                 +header-state-transfer-encoding+)
+                (go-state +state-header-value+))
+               (+header-state-content-length+
+                (unless (= byte +space+)
+                  (unless (digit-byte-char-p byte)
+                    (error 'invalid-content-length))
+                  (setf (parser-content-length parser)
+                        (+ (* 10 (parser-content-length parser))
+                           (digit-byte-char-to-integer byte))))
+                (go-state +state-header-value+))
+               ;; Transfer-Encoding: chunked
+               (+header-state-matching-transfer-encoding-chunked+
+                (incf (parser-index parser))
+                (looking-for parser (alpha-byte-char-to-lower-char byte)
+                             +chunked+ +header-state-transfer-encoding-chunked+)
+                (go-state +state-header-value+))
+               ;; looking for 'Connection: keep-alive'
+               (+header-state-matching-connection-keep-alive+
+                (incf (parser-index parser))
+                (looking-for parser (alpha-byte-char-to-lower-char byte)
+                             +keep-alive+ +header-state-connection-keep-alive+)
+                (go-state +state-header-value+))
+               ;; looking for 'Connection: close'
+               (+header-state-matching-connection-close+
+                (incf (parser-index parser))
+                (looking-for parser (alpha-byte-char-to-lower-char byte)
+                             +close+ +header-state-connection-close+)
+                (go-state +state-header-value+))
+               ((+header-state-transfer-encoding-chunked+
+                 +header-state-connection-keep-alive+
+                 +header-state-connection-close+)
+                (unless (= byte +space+)
+                  (setf (parser-header-state parser) +header-state-general+))
+                (go-state +state-header-value+))
+               (otherwise
+                (setf (parser-header-state parser) +header-state-general+)
+                (go-state +state-header-value+))))))
+
+         (+state-header-almost-done+
+          (check-strictly (= byte +lf+))
+          (go-state +state-header-value-lws+))
+
+         (+state-header-value-lws+
+          (when (or (= byte +space+)
                     (= byte +tab+))
-                (go-state +state-header-value-discard-ws+)
-                (progn
-                  ;; header value was empty
-                  (set-mark mark :header-value p)
-                  (setf (parser-state parser) +state-header-field-start+)
-                  (callback-data parser callbacks :header-value
-                                 data mark p)
-                  (go-state +state-header-field-start+ 0 nil))))
+            (set-mark mark :header-value p)
+            (go-state +state-header-value-start+ 0))
+          ;; finished the header
+          (casev= (parser-header-state parser)
+            (+header-state-connection-keep-alive+
+             (setf (parser-flags parser)
+                   (logxor (parser-flags parser) +flag-connection-keep-alive+)))
+            (+header-state-connection-close+
+             (setf (parser-flags parser)
+                   (logxor (parser-flags parser) +flag-connection-close+)))
+            (+header-state-transfer-encoding-chunked+
+             (setf (parser-flags parser)
+                   (logxor (parser-flags parser) +flag-chunked+))))
+          (go-state +state-header-field-start+ 0))
 
-           (+state-headers-almost-done+
-            (check-strictly (= byte +lf+))
-            (setf (parser-header-read parser) 0)
-            (go exit-loop)))
-       exit-loop)
-      p)))
+         (+state-header-value-discard-ws-almost-done+
+          (check-strictly (= byte +lf+))
+          (go-state +state-header-value-discard-lws+))
+
+         (+state-header-value-discard-lws+
+          (if (or (= byte +space+)
+                  (= byte +tab+))
+              (go-state +state-header-value-discard-ws+)
+              (progn
+                ;; header value was empty
+                (set-mark mark :header-value p)
+                (setf (parser-state parser) +state-header-field-start+)
+                (callback-data parser callbacks :header-value
+                               data mark p)
+                (go-state +state-header-field-start+ 0 nil))))
+
+         (+state-headers-almost-done+
+          (check-strictly (= byte +lf+))
+          (setf (parser-header-read parser) 0)
+          (go exit-loop)))
+     exit-loop)
+    p))
 
 (defun http-parse (parser callbacks data &key (start 0) end)
   (declare (type simple-byte-vector data)
