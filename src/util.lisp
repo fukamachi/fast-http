@@ -11,6 +11,7 @@
   (:export :check-strictly
            :casev
            :casev=
+           :case-byte
            :tagcase
            :tagcasev
            :tagcasev=
@@ -61,6 +62,16 @@
                                   ,@clause)
                  else
                    collect `((= ,keyform ,(get-val val)) ,@clause))))))
+
+(defmacro case-byte (byte &body cases)
+  `(casev= ,byte
+     ,@(loop for (val . form) in cases
+             if (eq val 'otherwise)
+               collect `(,val ,@form)
+             else if (listp val)
+               collect `(,(mapcar #'char-code val) ,@form)
+             else
+               collect `(,(char-code val) ,@form))))
 
 (defmacro tagcase (keyform &body blocks)
   (let ((end (gensym "END")))

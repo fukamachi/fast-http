@@ -20,7 +20,6 @@
            :alphanumeric-byte-char-p
            :mark-byte-char-p
            :ascii-octets-to-lower-string
-           :case-byte
            :append-byte-vectors))
 (in-package :fast-http.byte-vector)
 
@@ -110,16 +109,6 @@
         ((= j end) string)
       (setf (aref string i)
             (code-char (byte-to-ascii-lower (aref octets j)))))))
-
-(defmacro case-byte (byte &body cases)
-  `(case ,byte
-     ,@(loop for (val . form) in cases
-             if (eq val 'otherwise)
-               collect `(,val ,@form)
-             else if (listp val)
-               collect `(,(mapcar #'char-code val) ,@form)
-             else
-               collect `(,(char-code val) ,@form))))
 
 (defun append-byte-vectors (vec1 vec2)
   (declare (type simple-byte-vector vec1 vec2)
