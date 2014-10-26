@@ -10,15 +10,20 @@
                 :with-collectors)
   (:export :check-strictly
            :casev
+           :casev=
            :tagcase
            :tagcasev
+           :tagcasev=
            :make-collector
            :number-string-p))
 (in-package :fast-http.util)
 
 (defmacro check-strictly (form)
+  #+fast-http-strict
   `(unless ,form
-     (error 'strict-error :form ',form)))
+     (error 'strict-error :form ',form))
+  #-fast-http-strict
+  (declare (ignore form)))
 
 (defmacro casev (keyform &body clauses)
   (once-only (keyform)
@@ -36,6 +41,26 @@
                    collect `((,@(mapcar #'get-val val)) ,@clause)
                  else
                    collect `(,(get-val val) ,@clause))))))
+
+(defmacro casev= (keyform &body clauses)
+  (once-only (keyform)
+    (flet ((get-val (val)
+             (cond
+               ((eq val 'otherwise) val)
+               ((symbolp val) (symbol-value val))
+               ((constantp val) val)
+               (T (error "CASEV can be used only with variables or constants")))))
+      `(cond
+         ,@(loop for (val . clause) in clauses
+                 if (eq val 'otherwise)
+                   collect `(T ,@clause)
+                 else if (listp val)
+                        collect `((or ,@(mapcar (lambda (val)
+                                                  `(= ,keyform ,(get-val val)))
+                                                val))
+                                  ,@clause)
+                 else
+                   collect `((= ,keyform ,(get-val val)) ,@clause))))))
 
 (defmacro tagcase (keyform &body blocks)
   (let ((end (gensym "END")))
@@ -60,6 +85,25 @@
   (let ((end (gensym "END")))
     `(tagbody
         (casev ,keyform
+          ,@(loop for (tag . body) in blocks
+                  if (eq tag 'otherwise)
+                    collect `(otherwise ,@body (go ,end))
+                  else
+                    collect `(,tag (go ,(if (listp tag) (car tag) tag)))))
+        (go ,end)
+        ,@(loop for (tag . body) in blocks
+                if (listp tag)
+                  append tag
+                else if (not (eq tag 'otherwise))
+                       collect tag
+                collect `(progn ,@body
+                                (go ,end)))
+      ,end)))
+
+(defmacro tagcasev= (keyform &body blocks)
+  (let ((end (gensym "END")))
+    `(tagbody
+        (casev= ,keyform
           ,@(loop for (tag . body) in blocks
                   if (eq tag 'otherwise)
                     collect `(otherwise ,@body (go ,end))

@@ -4,7 +4,7 @@
         :fast-http.byte-vector
         :fast-http.variables)
   (:import-from :fast-http.util
-                :casev)
+                :casev=)
   (:export :parse-url-char))
 (in-package :fast-http.url)
 
@@ -22,13 +22,6 @@
       (= byte #.(char-code #\$))
       (= byte #.(char-code #\,))))
 
-(declaim (inline url-byte-char-p))
-(defun url-byte-char-p (byte)
-  (declare (type (unsigned-byte 8) byte))
-  (and (<= #.(char-code #\!) byte #.(char-code #\~))
-       (not (= byte #.(char-code #\?)))
-       (not (= byte #.(char-code #\#)))))
-
 (declaim (ftype (function (fixnum (unsigned-byte 8)) fixnum) parse-url-char))
 (defun parse-url-char (state byte)
   (declare (optimize (speed 3) (safety 0)))
@@ -39,11 +32,12 @@
           (= byte +lf+))
       +state-dead+)
      ;; when strict mode
+     #+fast-http-strict
      ((or (= byte +tab+)
           (= byte +page+))
       +state-dead+)
      (T
-      (casev state
+      (casev= state
         (+state-req-spaces-before-url+
          ;; Proxied requests are followed by scheme of an absolute URI (alpha).
          ;; All methods except CONNECT are followed by '/' or '*'.
