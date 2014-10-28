@@ -143,7 +143,7 @@
                      (gethash (the simple-string parsing-header-field) headers)
                    (setf (gethash (the simple-string parsing-header-field) headers)
                          (if existp
-                             (format nil "~A, ~A" previous-value header-value)
+                             (concatenate 'string (the simple-string previous-value) ", " header-value)
                              (if (number-string-p header-value)
                                  (read-from-string header-value)
                                  header-value))))))))
