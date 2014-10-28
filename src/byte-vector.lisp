@@ -96,6 +96,7 @@
       (- x #.(- (char-code #\A) (char-code #\a)))
       x))
 
+(declaim (inline ascii-octets-to-lower-string))
 (defun ascii-octets-to-lower-string (octets &key (start 0) (end (length octets)))
   (declare (type simple-byte-vector octets)
            (type (unsigned-byte 64) start end)

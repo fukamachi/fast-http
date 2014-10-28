@@ -22,7 +22,8 @@
       (= byte #.(char-code #\$))
       (= byte #.(char-code #\,))))
 
-(declaim (ftype (function (fixnum (unsigned-byte 8)) fixnum) parse-url-char))
+(declaim (ftype (function (fixnum (unsigned-byte 8)) fixnum) parse-url-char)
+         (inline parse-url-char))
 (defun parse-url-char (state byte)
   (declare (optimize (speed 3) (safety 0)))
   (or
