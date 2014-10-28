@@ -202,6 +202,7 @@
                           (declare (ignore parser)
                                    (type simple-byte-vector data))
                           (flet ((get-data (data start end)
+                                   (declare (type integer start end))
                                    (if (and (zerop start)
                                             (= end (length data)))
                                        data
