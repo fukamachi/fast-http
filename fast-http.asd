@@ -28,11 +28,10 @@
                 :components
                 ((:file "fast-http" :depends-on ("http" "parser" "unparser" "multipart-parser" "body-buffer" "byte-vector" "error"))
                  (:file "http")
-                 (:file "parser"  :depends-on ("byte-vector" "url" "variables" "error" "util"))
+                 (:file "parser"  :depends-on ("byte-vector" "variables" "error" "util"))
                  (:file "unparser" :depends-on ("http"))
                  (:file "multipart-parser" :depends-on ("parser" "byte-vector" "error"))
                  (:file "byte-vector")
-                 (:file "url" :depends-on ("variables" "util"))
                  (:file "body-buffer" :depends-on ("error"))
                  (:file "variables")
                  (:file "error")

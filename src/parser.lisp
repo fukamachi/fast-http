@@ -3,7 +3,6 @@
   (:use :cl
         :fast-http.byte-vector
         :fast-http.error
-        :fast-http.url
         :fast-http.variables
         :fast-http.util)
   (:import-from :alexandria
@@ -279,6 +278,137 @@
            #+fast-http-debug
            (log:debug ,(princ-to-string state))))
      (go ,state)))
+
+
+;;
+;; Macros for URL parsing
+
+(declaim (inline userinfo-byte-char-p))
+(defun userinfo-byte-char-p (byte)
+  (declare (type (unsigned-byte 8) byte))
+  (or (alphanumeric-byte-char-p byte)
+      (mark-byte-char-p byte)
+      (= byte #.(char-code #\%))
+      (= byte #.(char-code #\;))
+      (= byte #.(char-code #\:))
+      (= byte #.(char-code #\&))
+      (= byte #.(char-code #\=))
+      (= byte #.(char-code #\+))
+      (= byte #.(char-code #\$))
+      (= byte #.(char-code #\,))))
+
+(defmacro go-with-parse-url-char (state byte)
+  `(progn
+     (cond
+       ((or (= ,byte +space+)
+            (= ,byte +cr+)
+            (= ,byte +lf+))
+        (error 'invalid-url))
+       ;; when strict mode
+       #+fast-http-strict
+       ((or (= ,byte +tab+)
+            (= ,byte +page+))
+        (error 'invalid-url))
+       (T
+        ,(case state
+           (+state-req-spaces-before-url+
+            ;; Proxied requests are followed by scheme of an absolute URI (alpha).
+            ;; All methods except CONNECT are followed by '/' or '*'.
+            `(cond
+               ((or (= ,byte #.(char-code #\/))
+                    (= ,byte #.(char-code #\*)))
+                (go-state +state-req-path+))
+               ((alpha-byte-char-p ,byte)
+                (go-state +state-req-schema+))))
+           (+state-req-schema+
+            `(cond
+               ((alpha-byte-char-p ,byte)
+                (go-state ,state))
+               ((= ,byte #.(char-code #\:))
+                (go-state +state-req-schema-slash+))))
+           (+state-req-schema-slash+
+            `(when (= ,byte #.(char-code #\/))
+               (go-state +state-req-schema-slash-slash+)))
+           (+state-req-schema-slash-slash+
+            `(when (= ,byte #.(char-code #\/))
+               (go-state +state-req-server-start+)))
+           ((+state-req-server-with-at+
+             +state-req-server-start+
+             +state-req-server+)
+            `(cond
+               ((and (= ,state +state-req-server-with-at+)
+                     (= ,byte #.(char-code #\@)))
+                (error 'invalid-url))
+               ((= ,byte #.(char-code #\/))
+                (go-state +state-req-path+))
+               ((= ,byte #.(char-code #\?))
+                (go-state +state-req-query-string-start+))
+               ((= ,byte #.(char-code #\@))
+                (go-state +state-req-server-with-at+))
+               ((or (userinfo-byte-char-p ,byte)
+                    (= ,byte #.(char-code #\[))
+                    (= ,byte #.(char-code #\])))
+                (go-state +state-req-server+))))
+           (+state-req-path+
+            `(cond
+               ((= ,byte #.(char-code #\?))
+                (go-state +state-req-query-string-start+))
+               ((= ,byte #.(char-code #\#))
+                (go-state +state-req-fragment-start+))
+               ((<= #.(char-code #\!) ,byte #.(char-code #\~))
+                (go-state ,state))
+               ;; utf-8 path
+               ((<= 128 ,byte) (go-state ,state))))
+           ((+state-req-query-string-start+
+             +state-req-query-string+)
+            `(cond
+               ((= ,byte #.(char-code #\?))
+                ;; allow extra '?' in query string
+                (go-state +state-req-query-string+))
+               ((= ,byte #.(char-code #\#))
+                (go-state +state-req-fragment-start+))
+               ((<= #.(char-code #\!) ,byte #.(char-code #\~))
+                (go-state +state-req-query-string+))))
+           (+state-req-fragment-start+
+            `(cond
+               ((= ,byte #.(char-code #\?))
+                (go-state +state-req-fragment+))
+               ((= ,byte #.(char-code #\#))
+                (go-state ,state))
+               ((<= #.(char-code #\!) ,byte #.(char-code #\~))
+                (go-state +state-req-fragment+))))
+           (+state-req-fragment+
+            `(when (<= #.(char-code #\!) ,byte #.(char-code #\~))
+               (go-state ,state))))))
+     (error 'invalid-url)))
+
+(eval-when (:compile-toplevel :load-toplevel)
+  (defun state-req-absurl-case (state)
+    `(,state (go-with-parse-url-char ,state byte)))
+
+  (defun state-req-url-case (state)
+    `(,state
+      (casev= byte
+        (+space+
+         (setf (parser-state parser) +state-req-http-start+)
+         (callback-data parser callbacks :url
+                        data mark p)
+         (go-state +state-req-http-start+ 1 nil))
+        ((+cr+ +lf+)
+         (setf (parser-http-major parser) 0
+               (parser-http-minor parser) 9)
+         (setf (parser-state parser)
+               (if (= byte +cr+)
+                   +state-req-line-almost-done+
+                   +state-header-field-start+))
+         (callback-data parser callbacks :url
+                        data mark p)
+         (callback-notify parser callbacks :first-line)
+         (if (= byte +cr+)
+             (go-state +state-req-line-almost-done+ 1 nil)
+             (go-state +state-header-field-start+ 1 nil)))
+        (otherwise
+         (go-with-parse-url-char ,state byte))))))
 
 
 ;;
@@ -877,58 +1007,22 @@
                 (when (= byte +space+)
                   (go-state +state-req-spaces-before-url+ 1 nil))
                 (set-mark mark :url p)
-                (let ((state (parser-state parser)))
-                  (when (eq (parser-method parser) :connect)
-                    (setq state +state-req-server-start+))
-                  (setf (parser-state parser)
-                        (parse-url-char state byte)))
-                (when (= (parser-state parser) +state-dead+)
-                  (error 'invalid-url)))
+                (if (eq (parser-method parser) :connect)
+                    (go-with-parse-url-char +state-req-server-start+ byte)
+                    (go-with-parse-url-char +state-req-spaces-before-url+ byte)))
 
-               ((+state-req-schema+
-                 +state-req-schema-slash+
-                 +state-req-schema-slash-slash+
-                 +state-req-server-start+)
-                (casev= byte
-                  ((+space+ +cr+ +lf+)
-                   (error 'invalid-url))
-                  (otherwise
-                   (setf (parser-state parser)
-                         (parse-url-char (parser-state parser) byte))
-                   (when (= (parser-state parser) +state-dead+)
-                     (error 'invalid-url)))))
+               #.(state-req-absurl-case '+state-req-schema+)
+               #.(state-req-absurl-case '+state-req-schema-slash+)
+               #.(state-req-absurl-case '+state-req-schema-slash-slash+)
+               #.(state-req-absurl-case '+state-req-server-start+)
 
-               ((+state-req-server+
-                 +state-req-server-with-at+
-                 +state-req-path+
-                 +state-req-query-string-start+
-                 +state-req-query-string+
-                 +state-req-fragment-start+
-                 +state-req-fragment+)
-                (casev= byte
-                  (+space+
-                   (setf (parser-state parser) +state-req-http-start+)
-                   (callback-data parser callbacks :url
-                                  data mark p)
-                   (go-state +state-req-http-start+ 1 nil))
-                  ((+cr+ +lf+)
-                   (setf (parser-http-major parser) 0
-                         (parser-http-minor parser) 9)
-                   (setf (parser-state parser)
-                         (if (= byte +cr+)
-                             +state-req-line-almost-done+
-                             +state-header-field-start+))
-                   (callback-data parser callbacks :url
-                                  data mark p)
-                   (callback-notify parser callbacks :first-line)
-                   (if (= byte +cr+)
-                       (go-state +state-req-line-almost-done+ 1 nil)
-                       (go-state +state-header-field-start+ 1 nil)))
-                  (otherwise
-                   (setf (parser-state parser)
-                         (parse-url-char (parser-state parser) byte))
-                   (when (= (parser-state parser) +state-dead+)
-                     (error 'invalid-url)))))
+               #.(state-req-url-case '+state-req-server+)
+               #.(state-req-url-case '+state-req-server-with-at+)
+               #.(state-req-url-case '+state-req-path+)
+               #.(state-req-url-case '+state-req-query-string-start+)
+               #.(state-req-url-case '+state-req-query-string+)
+               #.(state-req-url-case '+state-req-fragment-start+)
+               #.(state-req-url-case '+state-req-fragment+)
 
                (+state-req-http-start+
                 (case-byte byte
