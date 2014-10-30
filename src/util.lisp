@@ -157,7 +157,7 @@
          (step-fn (if from-end #'1- #'1+)))
     (declare (type integer len start end))
     (do ((i start (funcall step-fn i)))
-        ((= i end))
+        ((= i end) i)
       (declare (type integer i))
       (unless (%whitespacep (aref string i))
         (return-from position-not-whitespace i)))))
