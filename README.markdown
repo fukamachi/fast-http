@@ -7,7 +7,9 @@ This is a fast HTTP request/response protocol parser for Common Lisp. Most parts
 ![Parsing an HTTP request header 100000 times.](images/benchmark.png)
 
 - [http-parser](https://github.com/joyent/http-parser): An HTTP Parser for [Node.js](http://github.com/joyent/node)
-- [PicoHTTPParser](https://github.com/h2o/picohttpparser): An HTTP Parser for [H2O](https://github.com/h2o/h2o), an optimized HTTP server
+
+
+NOTE: Deleted [PicoHTTPParser](https://github.com/h2o/picohttpparser) because the benchmark was wrong. It's **3.7 times faster** than fast-http. Amazing.
 
 See [Benchmark](#benchmark) for the detail.
 
@@ -66,11 +68,11 @@ $ git clone https://github.com/fukamachi/fast-http
 
 - Parsing an HTTP request header 100000 times.
 
-In this benchmark, fast-http is **2 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent and **1.2 times faster** than [picohttpparser](https://github.com/h2o/picohttpparser).
+In this benchmark, fast-http is **2 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
 
-| http-parser (C) | picohttpparser (C) | fast-http |
-| ---------------:|-------------------:| ---------:|
-|      0.289s     |       0.163s       |   0.138s  |
+| http-parser (C) | fast-http |
+| ---------------:| ---------:|
+|      0.289s     |   0.138s  |
 
 ### Environment
 
@@ -205,9 +207,9 @@ int main(void)
 
 ```
 $ make
-$ gcc -Wall -Wextra -Werror -O3 http_parser.o bench.c -o bench
+$ gcc -Wall -Wextra -Werror -O3 http_parser.c bench.c -o bench
 $ bench
-Elapsed 0.163665 seconds.
+Elapsed 0.036571 seconds.
 ```
 
 ## Author
