@@ -2,9 +2,11 @@
 
 This is a fast HTTP request/response protocol parser for Common Lisp.
 
-## How fast
+## How fast?
 
-See [Benchmark](#Benchmark).
+![Parsing a HTTP request header 100000 times.](images/benchmark.png)
+
+See [Benchmark](#benchmark) for the detail.
 
 ## Usage
 
@@ -58,9 +60,13 @@ $ git clone git@github.com:fukamachi/fast-http
 
 ## Benchmark
 
-![Parsing a HTTP request header 100000 times.](images/benchmark.png)
+- Parsing a HTTP request header 100000 times.
 
 In this benchmark, fast-http is **2 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent and **1.2 times faster** than [picohttpparser](https://github.com/h2o/picohttpparser).
+
+| fast-http | http-parser (C) | picohttpparser (C) |
+| ---------:| ---------------:|-------------------:|
+|   0.138s  |      0.289s     |       0.163s       |
 
 ### Environment
 
