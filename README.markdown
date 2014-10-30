@@ -58,16 +58,16 @@ $ git clone git@github.com:fukamachi/fast-http
 
 * Parsing a HTTP request header 100000 times.
 
-In this benchmark, fast-http is **43% faster** than [http-parser](https://github.com/joyent/http-parser), a C library.
+In this benchmark, fast-http is **2 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent and **1.2 times faster** than [picohttpparser](https://github.com/h2o/picohttpparser).
 
-| fast-http | http-parser (C) |
-| ---------:| ---------------:|
-|   0.166s  |      0.289s     |
+| fast-http | http-parser (C) | picohttpparser (C) |
+| ---------:| ---------------:|-------------------:|
+|   0.138s  |      0.289s     |      0.163665s     |
 
 ### Environment
 
 * MacBook Pro OSX Mavericks (CPU: 3GHz Intel Core i7, Memory: 8GB)
-* SBCL 1.2.4
+* SBCL 1.2.5
 * GCC version 6.0 (clang-600.0.51)
 
 ### fast-http (Common Lisp)
@@ -88,10 +88,10 @@ In this benchmark, fast-http is **43% faster** than [http-parser](https://github
 
 ```
 Evaluation took:
-  0.166 seconds of real time
-  0.166369 seconds of total run time (0.165350 user, 0.001019 system)
+  0.138 seconds of real time
+  0.138351 seconds of total run time (0.137894 user, 0.000457 system)
   100.00% CPU
-  495,238,359 processor cycles
+  414,180,401 processor cycles
   0 bytes consed
 ```
 
@@ -153,6 +153,53 @@ $ make
 $ gcc -Wall -Wextra -Werror -O3 http_parser.o bench.c -o bench
 $ bench
 Elapsed 0.289766 seconds.
+```
+
+### picohttpparser (C)
+
+The most part of this benchmark code is from [the official repository](https://github.com/h2o/picohttpparser/blob/master/bench.c).
+
+```c
+#include <assert.h>
+#include <stdio.h>
+#include <time.h>
+#include "picohttpparser.h"
+
+#define REQ "GET /cookies HTTP/1.1\r\nHost: 127.0.0.1:8090\r\nConnection: keep-alive\r\nCache-Control: max-age=0\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\nUser-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.56 Safari/537.17\r\nAccept-Encoding: gzip,deflate,sdch\r\nAccept-Language: en-US,en;q=0.8\r\nAccept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3\r\nCookie: name=wookie\r\n\r\n"
+
+int main(void)
+{
+  const char* method;
+  size_t method_len;
+  const char* path;
+  size_t path_len;
+  int minor_version;
+  struct phr_header headers[32];
+  size_t num_headers;
+  int i, ret;
+  float start, end;
+  
+  start = (float)clock()/CLOCKS_PER_SEC;
+  for (i = 0; i < 100000; i++) {
+    num_headers = sizeof(headers) / sizeof(headers[0]);
+    ret = phr_parse_request(REQ, sizeof(REQ) - 1, &method, &method_len, &path,
+			    &path_len, &minor_version, headers, &num_headers,
+			    0);
+    assert(ret == sizeof(REQ) - 1);
+  }
+  end = (float)clock()/CLOCKS_PER_SEC;
+  
+  printf("Elapsed %f seconds.\n", (end - start));
+
+  return 0;
+}
+```
+
+```
+$ make
+$ gcc -Wall -Wextra -Werror -O3 http_parser.o bench.c -o bench
+$ bench
+Elapsed 0.163665 seconds.
 ```
 
 ## Author
