@@ -62,7 +62,7 @@ In this benchmark, fast-http is **2 times faster** than [http-parser](https://gi
 
 | fast-http | http-parser (C) | picohttpparser (C) |
 | ---------:| ---------------:|-------------------:|
-|   0.138s  |      0.289s     |      0.163665s     |
+|   0.138s  |      0.289s     |       0.163s       |
 
 ### Environment
 
