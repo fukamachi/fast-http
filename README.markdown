@@ -44,11 +44,12 @@ The API is quite similar to [http-parse](https://github.com/orthecreedence/http-
 
 ## Installation
 
-Until this library will be available on [Quicklisp](http://www.quicklisp.org/beta/), download this from GitHub.
+Until this library will be available on [Quicklisp](http://www.quicklisp.org/beta/), download it from GitHub.
 
 ```
 $ cd ~/common-lisp/
-$ git clone git@github.com:fukamachi/fast-http
+$ git clone https://github.com/fukamachi/xsubseq
+$ git clone https://github.com/fukamachi/fast-http
 ```
 
 ```common-lisp
