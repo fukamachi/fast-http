@@ -446,16 +446,16 @@
                (setf (parser-index parser) 0)
 
                (setf (parser-header-state parser)
-                     (case char
-                       (#\c
+                     (cond
+                       ((char= char #\c)
                         +header-state-C+)
-                       (#\p
+                       ((char= char #\p)
                         +header-state-matching-proxy-connection+)
-                       (#\t
+                       ((char= char #\t)
                         +header-state-matching-transfer-encoding+)
-                       (#\u
+                       ((char= char #\u)
                         +header-state-matching-upgrade+)
-                       (otherwise
+                       (T
                         +header-state-general+)))
                (go-state +state-header-field+)))))
 
@@ -492,10 +492,10 @@
                   (incf (parser-index parser))
 
                   (setf (parser-header-state parser)
-                        (case char
-                          (#\n +header-state-matching-connection+)
-                          (#\t +header-state-matching-content-length+)
-                          (otherwise +header-state-general+)))
+                        (cond
+                          ((char= char #\n) +header-state-matching-connection+)
+                          ((char= char #\t) +header-state-matching-content-length+)
+                          (T +header-state-general+)))
                   (go-state +state-header-field+))
                  (+header-state-matching-connection+
                   (incf (parser-index parser))
@@ -562,14 +562,14 @@
              (go-state +state-header-value+))
             (+header-state-connection+
              (setf (parser-header-state parser)
-                   (case-byte byte
+                   (cond
                      ;; looking for 'Connection: keep-alive'
-                     (#\k
+                     ((char= char #\k)
                       +header-state-matching-connection-keep-alive+)
                      ;; looking for 'Connection: close'
-                     (#\c
+                     ((char= char #\c)
                       +header-state-matching-connection-close+)
-                     (otherwise
+                     (T
                       +header-state-general+)))
              (go-state +state-header-value+))
             (otherwise
