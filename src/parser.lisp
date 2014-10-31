@@ -166,18 +166,6 @@
   (declare (type fixnum state))
   (<= state +state-headers-done+))
 
-(defmacro looking-for (parser char string state)
-  (let* ((string (etypecase string
-                   (string string)
-                   (symbol (symbol-value string))))
-         (len (length string)))
-    `(cond
-       ((or (< ,len (parser-index ,parser))
-            (not (char= ,char (aref ,string (parser-index ,parser)))))
-        (setf (parser-header-state ,parser) +header-state-general+))
-       ((= (parser-index ,parser) ,(- len 1))
-        (setf (parser-header-state ,parser) ,state)))))
-
 (defun http-message-needs-eof-p (parser)
   (declare (optimize (speed 3) (safety 2)))
   (when (eq (parser-type parser) :request)
@@ -266,6 +254,63 @@
            #+fast-http-debug
            (log:debug ,(princ-to-string state))))
      (go ,state)))
+
+(defmacro check-header-field-end ()
+  `(when (= byte #.(char-code #\:))
+     (setf (parser-state parser) +state-header-value-discard-ws+)
+     (callback-data parser callbacks :header-field
+                    data mark p)
+     (go-state +state-header-value-discard-ws+ 1 nil)))
+
+(defmacro check-header-value-end ()
+  `(casev= byte
+     (+cr+
+      (setf (parser-state parser) +state-header-almost-done+)
+      (callback-data parser callbacks :header-value
+                     data mark p)
+      (go-state +state-header-almost-done+ 1 nil))
+     (+lf+
+      (setf (parser-state parser) +state-header-almost-done+)
+      (callback-data parser callbacks :header-value
+                     data mark p)
+      (go-state +state-header-almost-done+ 0 nil))))
+
+(defmacro go-header-field-state (state)
+  `(progn
+     (setf (parser-header-state parser) ,state)
+     (incf p)
+     (check-header-overflow (incf (parser-header-read parser)))
+     (setq byte (aref data p))
+     (check-header-field-end)
+     (setq char (aref +tokens+ byte))
+     (when (char= char #\Nul)
+       (error 'invalid-header-token))
+     (go ,state)))
+
+(defmacro go-header-value-state (state)
+  `(progn
+     (setf (parser-header-state parser) ,state)
+     (incf p)
+     (check-header-overflow (incf (parser-header-read parser)))
+     (setq byte (aref data p))
+     (check-header-value-end)
+     (go ,state)))
+
+(defmacro looking-for (parser char string state &optional value)
+  (let* ((string (etypecase string
+                   (string string)
+                   (symbol (symbol-value string))))
+         (len (length string)))
+    `(cond
+       ((or (< ,len (parser-index ,parser))
+            (not (char= ,char (aref ,string (parser-index ,parser)))))
+        (,(if value
+              'go-header-value-state
+              'go-header-field-state) +header-state-general+))
+       ((= (parser-index ,parser) ,(- len 1))
+        (,(if value
+              'go-header-value-state
+              'go-header-field-state) ,state)))))
 
 
 ;;
@@ -446,38 +491,40 @@
                (go-state +state-header-field+)))))
 
          (+state-header-field+
-          (when (= byte #.(char-code #\:))
-            (setf (parser-state parser) +state-header-value-discard-ws+)
-            (callback-data parser callbacks :header-field
-                           data mark p)
-            (go-state +state-header-value-discard-ws+ 1 nil))
+          (check-header-field-end)
           (let ((char (aref +tokens+ byte)))
             (declare (type character char))
             (cond
               ((char= char #\Nul)
                (error 'invalid-header-token))
               (T
-               (casev= (parser-header-state parser)
+               (tagcasev= (parser-header-state parser)
                  (+header-state-general+
-                  (go-state +state-header-field+))
+                  (go-header-field-state +header-state-general+))
                  (+header-state-matching-content-length+
                   (incf (parser-index parser))
-                  (looking-for parser char +content-length+ +header-state-content-length+)
-                  (go-state +state-header-field+))
+                  (looking-for parser (aref +tokens+ byte) +content-length+ +header-state-content-length+)
+                  (go-header-field-state +header-state-matching-content-length+))
                  (+header-state-matching-transfer-encoding+
                   (incf (parser-index parser))
-                  (looking-for parser char +transfer-encoding+ +header-state-transfer-encoding+)
-                  (go-state +state-header-field+))
+                  (looking-for parser (aref +tokens+ byte) +transfer-encoding+ +header-state-transfer-encoding+)
+                  (go-header-field-state +header-state-matching-transfer-encoding+))
                  (+header-state-matching-upgrade+
                   (incf (parser-index parser))
-                  (looking-for parser char +upgrade+ +header-state-upgrade+)
-                  (go-state +state-header-field+))
-                 ((+header-state-content-length+
-                   +header-state-transfer-encoding+
-                   +header-state-upgrade+)
+                  (looking-for parser (aref +tokens+ byte) +upgrade+ +header-state-upgrade+)
+                  (go-header-field-state +header-state-matching-upgrade+))
+                 (+header-state-content-length+
                   (unless (= byte +space+)
-                    (setf (parser-header-state parser) +header-state-general+))
-                  (go-state +state-header-field+)))))))
+                    (go-header-field-state +header-state-general+))
+                  (go-header-field-state +header-state-content-length+))
+                 (+header-state-transfer-encoding+
+                  (unless (= byte +space+)
+                    (go-header-field-state +header-state-general+))
+                  (go-header-field-state +header-state-transfer-encoding+))
+                 (+header-state-upgrade+
+                  (unless (= byte +space+)
+                    (go-header-field-state +header-state-general+))
+                  (go-header-field-state +header-state-upgrade+)))))))
 
          ((+state-header-value-discard-ws+
            +state-header-value-start+)
@@ -518,44 +565,32 @@
              (setf (parser-header-state parser) +header-state-general+)
              (go-state +state-header-value+))))
          (+state-header-value+
-          (casev= byte
-            (+cr+
-             (setf (parser-state parser) +state-header-almost-done+)
-             (callback-data parser callbacks :header-value
-                            data mark p)
-             (go-state +state-header-almost-done+ 1 nil))
-            (+lf+
-             (setf (parser-state parser) +state-header-almost-done+)
-             (callback-data parser callbacks :header-value
-                            data mark p)
-             (go-state +state-header-almost-done+ 0 nil))
+          (check-header-value-end)
+          (tagcasev= (parser-header-state parser)
+            (+header-state-general+
+             (go-header-value-state +header-state-general+))
+            (+header-state-transfer-encoding+
+             (go-header-value-state +header-state-transfer-encoding+))
+            (+header-state-content-length+
+             (unless (= byte +space+)
+               (unless (digit-byte-char-p byte)
+                 (error 'invalid-content-length))
+               (setf (parser-content-length parser)
+                     (+ (* 10 (parser-content-length parser))
+                        (digit-byte-char-to-integer byte))))
+             (go-header-value-state +header-state-content-length+))
+            ;; Transfer-Encoding: chunked
+            (+header-state-matching-transfer-encoding-chunked+
+             (incf (parser-index parser))
+             (looking-for parser (alpha-byte-char-to-lower-char byte)
+                          +chunked+ +header-state-transfer-encoding-chunked+ T)
+             (go-header-value-state +header-state-matching-transfer-encoding-chunked+))
+            (+header-state-transfer-encoding-chunked+
+             (unless (= byte +space+)
+               (setf (parser-header-state parser) +header-state-general+))
+             (go-header-value-state +header-state-transfer-encoding-chunked+))
             (otherwise
-             (casev= (parser-header-state parser)
-               (+header-state-general+
-                (go-state +state-header-value+))
-               (+header-state-transfer-encoding+
-                (go-state +state-header-value+))
-               (+header-state-content-length+
-                (unless (= byte +space+)
-                  (unless (digit-byte-char-p byte)
-                    (error 'invalid-content-length))
-                  (setf (parser-content-length parser)
-                        (+ (* 10 (parser-content-length parser))
-                           (digit-byte-char-to-integer byte))))
-                (go-state +state-header-value+))
-               ;; Transfer-Encoding: chunked
-               (+header-state-matching-transfer-encoding-chunked+
-                (incf (parser-index parser))
-                (looking-for parser (alpha-byte-char-to-lower-char byte)
-                             +chunked+ +header-state-transfer-encoding-chunked+)
-                (go-state +state-header-value+))
-               (+header-state-transfer-encoding-chunked+
-                (unless (= byte +space+)
-                  (setf (parser-header-state parser) +header-state-general+))
-                (go-state +state-header-value+))
-               (otherwise
-                (setf (parser-header-state parser) +header-state-general+)
-                (go-state +state-header-value+))))))
+             (go-header-value-state +header-state-general+))))
 
          (+state-header-almost-done+
           (check-strictly (= byte +lf+))
