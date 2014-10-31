@@ -102,8 +102,10 @@
   (header-value nil :type (or null pointer))
   (body nil :type (or null pointer)))
 
+(declaim (inline init-mark))
 (defun init-mark (mark)
   "Initialize all slots of MARK. This is for reusing the instance in a parser."
+  (declare (optimize (speed 3) (safety 0)))
   (setf (mark-status mark) nil
         (mark-url mark) nil
         (mark-header-field mark) nil

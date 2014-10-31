@@ -46,7 +46,8 @@
                  mark-byte-char-p))
 
 (defun digit-byte-char-p (byte)
-  (declare (type (unsigned-byte 8) byte))
+  (declare (type (unsigned-byte 8) byte)
+           (optimize (speed 3) (safety 0)))
   (<= #.(char-code #\0) byte #.(char-code #\9)))
 
 (declaim (ftype (function ((unsigned-byte 8)) fixnum) digit-byte-char-to-integer))
@@ -56,7 +57,8 @@
   (the fixnum (- byte #.(char-code #\0))))
 
 (defun alpha-byte-char-p (byte)
-  (declare (type (unsigned-byte 8) byte))
+  (declare (type (unsigned-byte 8) byte)
+           (optimize (speed 3) (safety 0)))
   (or (<= #.(char-code #\A) byte #.(char-code #\Z))
       (<= #.(char-code #\a) byte #.(char-code #\z))))
 
@@ -76,7 +78,8 @@
       (digit-byte-char-p byte)))
 
 (defun mark-byte-char-p (byte)
-  (declare (type (unsigned-byte 8) byte))
+  (declare (type (unsigned-byte 8) byte)
+           (optimize (speed 3) (safety 0)))
   (or (= byte #.(char-code #\-))
       (= byte #.(char-code #\_))
       (= byte #.(char-code #\.))
