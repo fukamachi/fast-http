@@ -648,9 +648,6 @@
         (mark (init-mark (parser-mark parser))))
     (declare (type pointer end))
 
-    (unless (= (parser-http-errno parser) +ok+)
-      (return-from http-parse start))
-
     (when (= start end)
       (casev= (parser-state parser)
         (+state-body-identity-eof+
