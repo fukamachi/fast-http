@@ -138,8 +138,6 @@
 #.`(progn
      ,@(loop for i from 0
              for flag in '(chunked
-                           connection-keep-alive
-                           connection-close
                            trailing
                            upgrade
                            skipbody)
@@ -151,7 +149,6 @@
 
 (declaim (inline parsing-header-p
                  http-message-needs-eof-p
-                 http-should-keep-alive-p
                  init-mark))
 
 (defun parsing-header-p (state)
@@ -191,28 +188,8 @@
 
   T)
 
-(defun http-should-keep-alive-p (parser)
-  (declare (optimize (speed 3) (safety 2)))
-  (cond
-    ((and (< 0 (parser-http-major parser))
-          (< 0 (parser-http-minor parser)))
-     (unless (zerop (logand (parser-flags parser)
-                            +flag-connection-close+))
-       (return-from http-should-keep-alive-p nil)))
-    ((zerop (logand (parser-flags parser) +flag-connection-keep-alive+))
-     (return-from http-should-keep-alive-p nil)))
-  (not (http-message-needs-eof-p parser)))
-
 (defmacro cond-new-message (parser start-req-form start-res-form dead-form)
-  #+fast-http-strict
-  `(if (http-should-keep-alive-p ,parser)
-       (if (eq (parser-type ,parser) :request)
-           ,start-req-form
-           ,start-res-form)
-       ,dead-form)
-  #-fast-http-strict
   (declare (ignore dead-form))
-  #-fast-http-strict
   `(if (eq (parser-type ,parser) :request)
        ,start-req-form
        ,start-res-form))
@@ -448,9 +425,7 @@
                (setf (parser-header-state parser)
                      (cond
                        ((char= char #\c)
-                        +header-state-C+)
-                       ((char= char #\p)
-                        +header-state-matching-proxy-connection+)
+                        +header-state-matching-content-length+)
                        ((char= char #\t)
                         +header-state-matching-transfer-encoding+)
                        ((char= char #\u)
@@ -474,37 +449,6 @@
                (casev= (parser-header-state parser)
                  (+header-state-general+
                   (go-state +state-header-field+))
-                 (+header-state-C+
-                  (incf (parser-index parser))
-                  (setf (parser-header-state parser)
-                        (if (char= char #\o)
-                            +header-state-CO+
-                            +header-state-general+))
-                  (go-state +state-header-field+))
-                 (+header-state-CO+
-                  (incf (parser-index parser))
-                  (setf (parser-header-state parser)
-                        (if (char= char #\n)
-                            +header-state-CON+
-                            +header-state-general+))
-                  (go-state +state-header-field+))
-                 (+header-state-CON+
-                  (incf (parser-index parser))
-
-                  (setf (parser-header-state parser)
-                        (cond
-                          ((char= char #\n) +header-state-matching-connection+)
-                          ((char= char #\t) +header-state-matching-content-length+)
-                          (T +header-state-general+)))
-                  (go-state +state-header-field+))
-                 (+header-state-matching-connection+
-                  (incf (parser-index parser))
-                  (looking-for parser char +connection+ +header-state-connection+)
-                  (go-state +state-header-field+))
-                 (+header-state-matching-proxy-connection+
-                  (incf (parser-index parser))
-                  (looking-for parser char +proxy-connection+ +header-state-connection+)
-                  (go-state +state-header-field+))
                  (+header-state-matching-content-length+
                   (incf (parser-index parser))
                   (looking-for parser char +content-length+ +header-state-content-length+)
@@ -517,8 +461,7 @@
                   (incf (parser-index parser))
                   (looking-for parser char +upgrade+ +header-state-upgrade+)
                   (go-state +state-header-field+))
-                 ((+header-state-connection+
-                   +header-state-content-length+
+                 ((+header-state-content-length+
                    +header-state-transfer-encoding+
                    +header-state-upgrade+)
                   (unless (= byte +space+)
@@ -560,18 +503,6 @@
              (setf (parser-content-length parser)
                    (digit-byte-char-to-integer byte))
              (go-state +state-header-value+))
-            (+header-state-connection+
-             (setf (parser-header-state parser)
-                   (cond
-                     ;; looking for 'Connection: keep-alive'
-                     ((char= char #\k)
-                      +header-state-matching-connection-keep-alive+)
-                     ;; looking for 'Connection: close'
-                     ((char= char #\c)
-                      +header-state-matching-connection-close+)
-                     (T
-                      +header-state-general+)))
-             (go-state +state-header-value+))
             (otherwise
              (setf (parser-header-state parser) +header-state-general+)
              (go-state +state-header-value+))))
@@ -591,8 +522,7 @@
              (casev= (parser-header-state parser)
                (+header-state-general+
                 (go-state +state-header-value+))
-               ((+header-state-connection+
-                 +header-state-transfer-encoding+)
+               (+header-state-transfer-encoding+
                 (go-state +state-header-value+))
                (+header-state-content-length+
                 (unless (= byte +space+)
@@ -608,21 +538,7 @@
                 (looking-for parser (alpha-byte-char-to-lower-char byte)
                              +chunked+ +header-state-transfer-encoding-chunked+)
                 (go-state +state-header-value+))
-               ;; looking for 'Connection: keep-alive'
-               (+header-state-matching-connection-keep-alive+
-                (incf (parser-index parser))
-                (looking-for parser (alpha-byte-char-to-lower-char byte)
-                             +keep-alive+ +header-state-connection-keep-alive+)
-                (go-state +state-header-value+))
-               ;; looking for 'Connection: close'
-               (+header-state-matching-connection-close+
-                (incf (parser-index parser))
-                (looking-for parser (alpha-byte-char-to-lower-char byte)
-                             +close+ +header-state-connection-close+)
-                (go-state +state-header-value+))
-               ((+header-state-transfer-encoding-chunked+
-                 +header-state-connection-keep-alive+
-                 +header-state-connection-close+)
+               (+header-state-transfer-encoding-chunked+
                 (unless (= byte +space+)
                   (setf (parser-header-state parser) +header-state-general+))
                 (go-state +state-header-value+))
@@ -641,12 +557,6 @@
             (go-state +state-header-value-start+ 0))
           ;; finished the header
           (casev= (parser-header-state parser)
-            (+header-state-connection-keep-alive+
-             (setf (parser-flags parser)
-                   (logxor (parser-flags parser) +flag-connection-keep-alive+)))
-            (+header-state-connection-close+
-             (setf (parser-flags parser)
-                   (logxor (parser-flags parser) +flag-connection-close+)))
             (+header-state-transfer-encoding-chunked+
              (setf (parser-flags parser)
                    (logxor (parser-flags parser) +flag-chunked+))))
@@ -1289,7 +1199,6 @@
 
 (declaim (notinline parsing-header-p
                     http-message-needs-eof-p
-                    http-should-keep-alive-p
                     init-mark))
 
 

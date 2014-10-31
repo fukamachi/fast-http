@@ -79,14 +79,10 @@
 
    :+state-message-done+
 
-   :+proxy-connection+
-   :+connection+
    :+content-length+
    :+transfer-encoding+
    :+upgrade+
    :+chunked+
-   :+keep-alive+
-   :+close+
 
    :+header-state-general+
    :+header-state-c+
@@ -206,40 +202,26 @@
 ;;
 ;; Header States
 
-(define-constant +proxy-connection+ "proxy-connection" :test 'equalp)
-(define-constant +connection+ "connection" :test 'equalp)
 (define-constant +content-length+ "content-length" :test 'equalp)
 (define-constant +transfer-encoding+ "transfer-encoding" :test 'equalp)
 (define-constant +upgrade+ "upgrade" :test 'equalp)
 (define-constant +chunked+ "chunked" :test 'equalp)
-(define-constant +keep-alive+ "keep-alive" :test 'equalp)
-(define-constant +close+ "close" :test 'equalp)
 
 #.`(progn
      ,@(loop for i from 0
              for state in '(general
-                            c
-                            co
-                            con
 
-                            matching-connection
-                            matching-proxy-connection
                             matching-content-length
                             matching-transfer-encoding
                             matching-upgrade
 
-                            connection
                             content-length
                             transfer-encoding
                             upgrade
 
                             matching-transfer-encoding-chunked
-                            matching-connection-keep-alive
-                            matching-connection-close
 
-                            transfer-encoding-chunked
-                            connection-keep-alive
-                            connection-close)
+                            transfer-encoding-chunked)
              for state-name = (intern (format nil "+HEADER-STATE-~A+" state))
              collect `(declaim (type fixnum ,state-name))
              collect `(defconstant ,state-name ,i)))

@@ -75,8 +75,7 @@
                                                                      nil
                                                                      (parser-status-code parser))
                                                     :http-major (parser-http-major parser)
-                                                    :http-minor (parser-http-minor parser)
-                                                    :should-keep-alive (fast-http.parser::http-should-keep-alive-p parser))))
+                                                    :http-minor (parser-http-minor parser))))
                     :header-field (lambda (parser data start end)
                                     (declare (ignore parser))
                                     (push (cons (babel:octets-to-string data :start start :end end)
@@ -216,7 +215,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive T
       :url "/test"
       :headers ("User-Agent" "curl/7.18.0 (i486-pc-linux-gnu) libcurl/7.18.0 OpenSSL/0.9.8g zlib/1.2.3.3 libidn/1.1"
                 "Host" "0.0.0.0=5000"
@@ -238,7 +236,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/favicon.ico"
       :headers ("Host" "0.0.0.0=5000"
                 "User-Agent" "Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9) Gecko/2008061015 Firefox/3.0"
@@ -258,7 +255,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/dumbfuck"
       :headers ("aaaaaaaaaaaaa" "++++++++++")
       :body "")
@@ -270,7 +266,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/forums/1/topics/2375?page=1#posts-17408"
       :headers ()
       :body "")
@@ -282,7 +277,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/get_no_headers_no_body/world"
       :headers ()
       :body "")
@@ -295,7 +289,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/get_one_header_no_body"
       :headers ("Accept" "*/*")
       :body "")
@@ -309,7 +302,6 @@
       :status-code nil
       :http-major 1
       :http-minor 0
-      :should-keep-alive nil
       :url "/get_funky_content_length_body_hello"
       :headers ("conTENT-Length" "5")
       :body "HELLO")
@@ -325,7 +317,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/post_identity_body_world?q=search#hey"
       :headers ("Accept" "*/*"
                 "Transfer-Encoding" "identity"
@@ -343,7 +334,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/post_chunked_all_your_base"
       :headers ("Transfer-Encoding" "chunked")
       :body "all your base are belong to us")
@@ -360,7 +350,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/two_chunks_mult_zero_end"
       :headers ("Transfer-Encoding" "chunked")
       :body "hello world")
@@ -379,7 +368,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/chunked_w_trailing_headers"
       :headers ("Transfer-Encoding" "chunked"
                 "Vary" "*"
@@ -398,7 +386,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/chunked_w_bullshit_after_length"
       :headers ("Transfer-Encoding" "chunked")
       :body "hello world")
@@ -409,7 +396,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/with_\"stupid\"_quotes?foo=\"bar\""
       :headers ()
       :body "")
@@ -423,7 +409,6 @@
       :status-code nil
       :http-major 1
       :http-minor 0
-      :should-keep-alive nil
       :url "/test"
       :headers ("Host" "0.0.0.0:5000"
                 "User-Agent" "ApacheBench/2.3"
@@ -436,7 +421,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/test.cgi?foo=bar?baz"
       :headers ()
       :body "")
@@ -447,7 +431,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/test"
       :headers ()
       :body "")
@@ -467,7 +450,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/demo"
       :headers ("Host" "example.com"
                 "Connection" "Upgrade"
@@ -489,7 +471,6 @@
       :status-code nil
       :http-major 1
       :http-minor 0
-      :should-keep-alive nil
       :url "0-home0.netscape.com:443"
       :headers ("User-agent" "Mozilla/1.1N"
                 "Proxy-authorization" "basic aGVsbG86d29ybGQ=")
@@ -502,7 +483,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/test"
       :headers ()
       :body "")
@@ -514,7 +494,6 @@
       :status-code nil
       :http-major 0
       :http-minor 9
-      :should-keep-alive nil
       :url "/"
       :headers ()
       :body "")
@@ -529,7 +508,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "*"
       :headers ("HOST" "239.255.255.250:1900"
                 "MAN" "\"ssdp:discover\""
@@ -556,7 +534,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url "/"
       :headers ("Line1" #?"abc\tdef ghi\t\tjkl  mno \t \tqrs"
                 "Line2" #?"line2\t"
@@ -572,7 +549,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "http://hypnotoad.org?hail=all"
       :headers ()
       :body "")
@@ -584,7 +560,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "http://hypnotoad.org:1234?hail=all"
       :headers ()
       :body "")
@@ -596,7 +571,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "http://hypnotoad.org:1234"
       :headers ()
       :body "")
@@ -613,7 +587,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/file.txt"
       :headers ("Host" "www.example.com"
                 "Content-Type" "application/example"
@@ -630,7 +603,6 @@
       :status-code nil
       :http-major 1
       :http-minor 0
-      :should-keep-alive nil
       :url "HOME0.NETSCAPE.COM:443"
       :headers ("User-agent" "Mozilla/1.1N"
                 "Proxy-authorization" "basic aGVsbG86d29ybGQ=")
@@ -644,7 +616,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/δ¶/δt/pope?q=1#narf"
       :headers ("Host" "github.com")
       :body "")
@@ -658,7 +629,6 @@
       :status-code nil
       :http-major 1
       :http-minor 0
-      :should-keep-alive nil
       :url "home_0.netscape.com:443"
       :headers ("User-agent" "Mozilla/1.1N"
                 "Proxy-authorization" "basic aGVsbG86d29ybGQ=")
@@ -675,7 +645,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/"
       :headers ("Host" "www.example.com"
                 "Content-Type" "application/x-www-form-urlencoded"
@@ -694,7 +663,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url "/"
       :headers ("Host" "www.example.com"
                 "Content-Type" "application/x-www-form-urlencoded"
@@ -710,7 +678,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/file.txt"
       :headers ("Host" "www.example.com")
       :body "")
@@ -723,7 +690,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "/"
       :headers ("Host" "www.example.com")
       :body "")
@@ -735,7 +701,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url "http://a%12:b!&*$@hypnotoad.org:1234/toto"
       :headers ()
       :body "")
@@ -760,7 +725,6 @@
       :status-code nil
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url "/"
       :headers ("Line1" #?"abc\tdef ghi\t\tjkl  mno \t \tqrs"
                 "Line2" #?"line2\t"
@@ -794,7 +758,6 @@
       :status-code 301
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url nil
       :headers ("Location" "http://www.google.com/"
                 "Content-Type" "text/html; charset=UTF-8"
@@ -833,7 +796,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ("Date" "Tue, 04 Aug 2009 07:59:32 GMT"
                 "Server" "Apache"
@@ -857,7 +819,6 @@
       :status-code 404
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ()
       :body "")
@@ -868,7 +829,6 @@
       :status-code 301
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ()
       :body "")
@@ -890,7 +850,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url nil
       :headers ("Content-Type" "text/plain"
                 "Transfer-Encoding" "chunked")
@@ -908,7 +867,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ("Content-Type" "text/html; charset=utf-8"
                 "Connection" "close")
@@ -926,7 +884,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ("Content-Type" "text/html; charset=UTF-8"
                 "Content-Length" "11"
@@ -944,7 +901,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url nil
       :headers ("Server" "DCLK-AdSvr"
                 "Content-Type" "text/xml"
@@ -968,7 +924,6 @@
       :status-code 301
       :http-major 1
       :http-minor 0
-      :should-keep-alive t
       :url nil
       :headers ("Date" "Thu, 03 Jun 2010 09:56:32 GMT"
                 "Server" "Apache/2.2.3 (Red Hat)"
@@ -1000,7 +955,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ("Date" "Tue, 28 Sep 2010 01:14:13 GMT"
                 "Server" "Apache"
@@ -1025,7 +979,6 @@
       :status-code 500
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ("Date" "Fri, 5 Nov 2010 23:07:12 GMT+2"
                 "Content-Length" "0"
@@ -1039,7 +992,6 @@
       :status-code 200
       :http-major 0
       :http-minor 9
-      :should-keep-alive nil
       :url nil
       :headers ()
       :body "")
@@ -1053,7 +1005,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ("Content-Type" "text/plain")
       :body "hello world")
@@ -1066,7 +1017,6 @@
       :status-code 200
       :http-major 1
       :http-minor 0
-      :should-keep-alive nil
       :url nil
       :headers ("Connection" "keep-alive")
       :body "")
@@ -1079,7 +1029,6 @@
       :status-code 204
       :http-major 1
       :http-minor 0
-      :should-keep-alive t
       :url nil
       :headers ("Connection" "keep-alive")
       :body "")
@@ -1091,7 +1040,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ()
       :body "")
@@ -1103,7 +1051,6 @@
       :status-code 204
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url nil
       :headers ()
       :body "")
@@ -1116,7 +1063,6 @@
       :status-code 204
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ("Connection" "close")
       :body "")
@@ -1131,7 +1077,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url nil
       :headers ("Transfer-Encoding" "chunked")
       :body "")
@@ -1156,7 +1101,6 @@
       :status-code 301
       :http-major 1
       :http-minor 1
-      :should-keep-alive t
       :url nil
       :headers ("Date" "Wed, 15 May 2013 17:06:33 GMT"
                 "Server" "Server"
@@ -1176,7 +1120,6 @@
       :status-code 200
       :http-major 1
       :http-minor 1
-      :should-keep-alive nil
       :url nil
       :headers ()
       :body "")
