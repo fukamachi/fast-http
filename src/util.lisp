@@ -20,11 +20,8 @@
 (in-package :fast-http.util)
 
 (defmacro check-strictly (form)
-  #+fast-http-strict
   `(unless ,form
-     (error 'strict-error :form ',form))
-  #-fast-http-strict
-  (declare (ignore form)))
+     (error 'strict-error :form ',form)))
 
 (defmacro casev (keyform &body clauses)
   (once-only (keyform)
