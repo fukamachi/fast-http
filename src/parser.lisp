@@ -19,6 +19,7 @@
            :parser-method
            :parser-status-code
            :parser-chunked-p
+           :parser-upgrade-p
            :parser-content-length
            :parser-http-major
            :parser-http-minor))
@@ -72,6 +73,10 @@
 (defun parser-chunked-p (parser)
   (declare (optimize (speed 3) (safety 0)))
   (not (zerop (logand (parser-flags parser) +flag-chunked+))))
+
+(defun parser-upgrade-p (parser)
+  (declare (optimize (speed 3) (safety 0)))
+  (not (zerop (logand (parser-flags parser) +flag-upgrade+))))
 
 (defun parser-state-name (parser)
   (princ-to-string (aref +state-map+ (parser-state parser))))
@@ -188,7 +193,7 @@
                                   +flag-skipbody+))))
       (return-from http-message-needs-eof-p nil)))
 
-  (when (or (not (zerop (logand (parser-flags parser) +flag-chunked+)))
+  (when (or (parser-chunked-p parser)
             (not (= (parser-content-length parser) +max-content-length+)))
     (return-from http-message-needs-eof-p nil))
 
@@ -1042,7 +1047,7 @@
 
                    ;; Set this here so that on_headers_complete() callbacks can see it
                    (setf (parser-upgrade parser)
-                         (or (not (zerop (logand (parser-flags parser) +flag-upgrade+)))
+                         (or (parser-upgrade-p parser)
                              (eq (parser-method parser) :connect)))
 
                    (multiple-value-bind (retval existsp)
@@ -1065,7 +1070,7 @@
                   ((not (zerop (logand (parser-flags parser) +flag-skipbody+)))
                    (with-new-message parser
                      (callback-notify parser callbacks :message-complete)))
-                  ((not (zerop (logand (parser-flags parser) +flag-chunked+)))
+                  ((parser-chunked-p parser)
                    ;; chunked encoding - ignore Content-Length header
                    (go-state +state-chunk-size-start+))
                   (T
@@ -1110,7 +1115,7 @@
                   (callback-notify parser callbacks :message-complete)))
                (+state-chunk-size-start+
                 (assert (= (parser-header-read parser) 1))
-                (assert (not (zerop (logand (parser-flags parser) +flag-chunked+))))
+                (assert (parser-chunked-p parser))
 
                 (let ((unhex-val (aref +unhex+ byte)))
                   (declare (type fixnum unhex-val))
@@ -1119,7 +1124,7 @@
                   (setf (parser-content-length parser) unhex-val)
                   (go-state +state-chunk-size+)))
                (+state-chunk-size+
-                (assert (not (zerop (logand (parser-flags parser) +flag-chunked+))))
+                (assert (parser-chunked-p parser))
 
                 (cond
                   ((= byte +cr+)
@@ -1142,13 +1147,13 @@
                               (+ (* 16 (parser-content-length parser)) unhex-val))
                         (go-state +state-chunk-size+)))))))
                (+state-chunk-parameters+
-                (assert (not (zerop (logand (parser-flags parser) +flag-chunked+))))
+                (assert (parser-chunked-p parser))
                 ;; just ignore this shit.
                 (when (= byte +cr+)
                   (go-state +state-chunk-size-almost-done+))
                 (go-state +state-chunk-parameters+))
                (+state-chunk-size-almost-done+
-                (assert (not (zerop (logand (parser-flags parser) +flag-chunked+))))
+                (assert (parser-chunked-p parser))
                 (check-strictly (= byte +lf+))
                 (setf (parser-header-read parser) 0)
 
@@ -1162,8 +1167,7 @@
                (+state-chunk-data+
                 (let ((to-read (min (the pointer (parser-content-length parser))
                                     (the pointer (- end p)))))
-                  (assert (not (zerop (logand (parser-flags parser)
-                                              +flag-chunked+))))
+                  (assert (parser-chunked-p parser))
                   (assert (and (not (zerop (parser-content-length parser)))
                                (not (= (parser-content-length parser) +max-content-length+))))
 
@@ -1174,7 +1178,7 @@
                     (go-state +state-chunk-data-almost-done+))
                   (go-state +state-chunk-data+)))
                (+state-chunk-data-almost-done+
-                (assert (not (zerop (logand (parser-flags parser) +flag-chunked+))))
+                (assert (parser-chunked-p parser))
                 (assert (zerop (parser-content-length parser)))
                 (check-strictly (= byte +cr+))
                 (setf (parser-state parser) +state-chunk-data-done+)
@@ -1182,7 +1186,7 @@
                                data mark p)
                 (go-state +state-chunk-data-done+ 1 nil))
                (+state-chunk-data-done+
-                (assert (not (zerop (logand (parser-flags parser) +flag-chunked+))))
+                (assert (parser-chunked-p parser))
                 (check-strictly (= byte +lf+))
                 (setf (parser-header-read parser) 0)
                 (go-state +state-chunk-size-start+))
