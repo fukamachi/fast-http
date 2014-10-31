@@ -169,13 +169,10 @@
                              (xnconcf header-value-buffer
                                       (xsubseq (the simple-byte-vector data) start end)))
              :headers-complete (named-lambda headers-complete-cb-with-callback (parser)
-                                 (declare (ignore parser))
                                  (collect-prev-header-value)
                                  (setq header-complete-p t)
-                                 (setq chunked
-                                       (equal (gethash "transfer-encoding" headers)
-                                              "chunked")
-                                       content-length (gethash "content-length" headers)
+                                 (setq chunked (parser-chunked-p parser)
+                                       content-length (parser-content-length parser)
                                        content-type (gethash "content-type" headers))
                                  (setq header-value-buffer nil)
                                  (setf (http-headers http) headers)

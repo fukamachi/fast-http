@@ -18,6 +18,8 @@
            :make-ll-callbacks
            :parser-method
            :parser-status-code
+           :parser-chunked-p
+           :parser-content-length
            :parser-http-major
            :parser-http-minor))
 (in-package :fast-http.parser)
@@ -66,6 +68,10 @@
 
   (upgrade t :type boolean)
   (mark (make-mark)))
+
+(defun parser-chunked-p (parser)
+  (declare (optimize (speed 3) (safety 0)))
+  (not (zerop (logand (parser-flags parser) +flag-chunked+))))
 
 (defun parser-state-name (parser)
   (princ-to-string (aref +state-map+ (parser-state parser))))
