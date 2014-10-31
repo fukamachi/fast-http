@@ -237,7 +237,7 @@
 ;; Macros for only inside of http-parse-headers & http-parse
 
 (defmacro go-state (state &optional (advance 1) (set-state t))
-  `(locally (declare (optimize (speed 3) (safety 0)))
+  `(progn
      ,@(and set-state
             `((setf (parser-state parser) ,state)))
      ,(cond
