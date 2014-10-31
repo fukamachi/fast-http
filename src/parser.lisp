@@ -1075,7 +1075,7 @@
                  +state-header-value+
                  +state-header-value-lws+)
                 (let ((next (http-parse-headers parser callbacks data :start p :end end)))
-                  (when (= next end)
+                  (when (= (the pointer next) end)
                     (go exit-loop))
                   (setq p next)
                   (go-state +state-headers-almost-done+ 0 nil)))
