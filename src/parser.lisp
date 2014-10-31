@@ -280,6 +280,8 @@
   `(progn
      (setf (parser-header-state parser) ,state)
      (incf p)
+     (when (= p end)
+       (go exit-loop))
      (check-header-overflow (incf (parser-header-read parser)))
      (setq byte (aref data p))
      (check-header-field-end)
@@ -292,6 +294,8 @@
   `(progn
      (setf (parser-header-state parser) ,state)
      (incf p)
+     (when (= p end)
+       (go exit-loop))
      (check-header-overflow (incf (parser-header-read parser)))
      (setq byte (aref data p))
      (check-header-value-end)
