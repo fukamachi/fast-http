@@ -172,7 +172,9 @@
                                  (collect-prev-header-value)
                                  (setq header-complete-p t)
                                  (setq chunked (parser-chunked-p parser)
-                                       content-length (parser-content-length parser)
+                                       content-length (if (= (parser-content-length parser) +max-content-length+)
+                                                          nil
+                                                          (parser-content-length parser))
                                        content-type (gethash "content-type" headers))
                                  (setq header-value-buffer nil)
                                  (setf (http-headers http) headers)

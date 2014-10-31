@@ -22,7 +22,8 @@
            :parser-upgrade-p
            :parser-content-length
            :parser-http-major
-           :parser-http-minor))
+           :parser-http-minor
+           :+max-content-length+))
 (in-package :fast-http.parser)
 
 (declaim (type fixnum +http-max-header-size+))
