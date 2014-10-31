@@ -71,6 +71,8 @@
   (upgrade t :type boolean)
   (mark (make-mark)))
 
+(declaim (inline parser-chunked-p parser-upgrade-p))
+
 (defun parser-chunked-p (parser)
   (declare (optimize (speed 3) (safety 0)))
   (not (zerop (logand (parser-flags parser) +flag-chunked+))))
@@ -1379,3 +1381,5 @@
                (funcall (the function header-parameter-value-callback)
                         data parameter-value-mark p))))))
     p))
+
+(declaim (notinline parser-chunked-p parser-upgrade-p))
