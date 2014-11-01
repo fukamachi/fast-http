@@ -32,26 +32,30 @@
 ;; Macro utilities
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defvar *insane-declaration* '(declare (optimize (speed 3) (safety 2) (debug 0) (space 0) (compilation-speed 0))))
-  (defvar *speedy-declaration* '(declare (optimize (speed 3) (safety 2) (space 0) (compilation-speed 0))))
-  (defvar *careful-declaration* '(declare (optimize (speed 3) (safety 2) (space 0) (compilation-speed 0)))))
+  (defvar *insane-declaration* '(declare (optimize (speed 3) (safety 2) (debug 2) (space 0) (compilation-speed 0))))
+  (defvar *speedy-declaration* '(declare (optimize (speed 3) (safety 2) (space 2) (compilation-speed 0))))
+  (defvar *careful-declaration* '(declare (optimize (speed 3) (safety 2)))))
 
 (defmacro defun-insane (name lambda-list &body body)
   `(progn
-     #+nil(declaim (inline ,name))
+     (declaim (inline ,name))
      (defun ,name ,lambda-list
        ,*insane-declaration*
        ,@body)))
 
 (defmacro defun-speedy (name lambda-list &body body)
-  `(defun ,name ,lambda-list
-     ,*speedy-declaration*
-     ,@body))
+  `(progn
+     (declaim (notinline ,name))
+     (defun ,name ,lambda-list
+       ,*speedy-declaration*
+       ,@body)))
 
 (defmacro defun-careful (name lambda-list &body body)
-  `(defun ,name ,lambda-list
-     ,*careful-declaration*
-     ,@body))
+  `(progn
+     (declaim (notinline ,name))
+     (defun ,name ,lambda-list
+       ,*careful-declaration*
+       ,@body)))
 
 
 ;;
@@ -100,6 +104,13 @@
   `(loop until (progn ,form)
          do (advance)))
 
+(defmacro skip-until-crlf ()
+  `(loop if (= byte +cr+)
+           do (progn (expect-byte +lf+)
+                     (return))
+         else
+           do (advance)))
+
 (defmacro expect (form &optional (advance T))
   `(progn
      ,@(and advance `((advance)))
@@ -125,10 +136,7 @@
 (defmacro expect-crlf ()
   `(casev= byte
      (+cr+ (expect-byte +lf+))
-     ;; they might be just sending \n instead of \r\n
-     ;; so this would be the second \n
-     (+lf+)
-     (otherwise (assert (or (= byte +cr+) (= byte +lf+))))))
+     (otherwise (assert (= byte +cr+)))))
 
 (defmacro expect-one-of (strings &optional (errorp T) (case-sensitive T))
   (let ((expect-block (gensym "EXPECT-BLOCK")))
@@ -164,8 +172,8 @@
       `(block ,expect-block
          ,(build-case-byte 0 strings)))))
 
-(defmacro expect-token-one-of (strings)
-  (let ((expect-block (gensym "EXPECT-BLOCK")))
+(defmacro case-expect-token (strings &body clauses)
+  (with-gensyms (expect-block)
     (labels ((grouping (i strings)
                (let ((map (make-hash-table)))
                  (loop for string in strings
@@ -176,13 +184,16 @@
              (build-case (i strings)
                (let ((alist (grouping i strings)))
                  (if alist
-                     `(case (the character (aref +tokens+ byte))
+                     `(case (the character (svref +tokens+ byte))
                         (#\Nul (error 'invalid-header-token))
                         ,@(loop for (char . candidates) in alist
                                 collect `(,char (advance) ,(build-case (1+ i) candidates)))
-                        (otherwise (return-from ,expect-block nil)))
+                        (otherwise (return-from ,expect-block
+                                     (progn ,@(cdr (assoc 'otherwise clauses))))))
                      `(return-from ,expect-block
-                        ,(intern (car strings) :keyword))))))
+                        (if (= byte (char-code #\:))
+                            (progn ,@(cdr (assoc (intern (car strings) :keyword) clauses)))
+                            (progn ,@(cdr (assoc 'otherwise clauses)))))))))
       `(block ,expect-block
          ,(build-case 0 strings)))))
 
@@ -190,6 +201,7 @@
 ;;
 ;; Tokens
 
+(declaim (type (simple-array character (128)) +tokens+))
 (define-constant +tokens+
     #( #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
        #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
@@ -279,50 +291,44 @@
 
     (values major minor p)))
 
-(defun-insane parse-header-field (data start end)
-  (declare (type simple-byte-vector data)
-           (type pointer start end))
-  (let* ((p start)
-         (byte (aref data p)))
-    (declare (type (unsigned-byte 8) byte)
-             (type pointer p))
-    (casev= byte
-      ;; empty headers
-      ((+cr+ +lf+) (expect-crlf) (values nil p T))
-      (otherwise
-       (macrolet ((skip-until-field-end ()
-                    `(do ((char (aref +tokens+ byte)
-                                (aref +tokens+ byte)))
-                         ((= byte (char-code #\:)))
-                       (declare (type character char))
-                       (when (char= char #\Nul)
-                         (error 'invalid-header-token))
-                       (advance))))
-         (let ((key (expect-token-one-of ("content-length" "transfer-encoding" "upgrade"))))
-           (declare (type keyword key))
-           (if key
-               (progn (unless (= byte (char-code #\:))
-                        (setq key nil)
-                        (skip-until-field-end)))
-               (skip-until-field-end))
-           ;; callback :header-field start p
-           (values key p)))))))
+(defmacro parse-header-field ()
+  `(macrolet ((skip-until-field-end ()
+                `(do ((char (svref +tokens+ byte)
+                            (svref +tokens+ byte)))
+                     ((= byte (char-code #\:)))
+                   (declare (type character char))
+                   (when (char= char #\Nul)
+                     (error 'invalid-header-token))
+                   (advance))))
+     ;; callback :header-field start p
+     (case-expect-token ("content-length" "transfer-encoding" "upgrade")
+       (:|content-length|
+         (multiple-value-bind (next content-length)
+             (parse-header-value-content-length data p end)
+           (declare (type pointer next))
+           (setf (parser-content-length parser) content-length)
+           (advance-to next)))
+       (:|transfer-encoding|
+         (multiple-value-bind (next chunkedp)
+             (parse-header-value-transfer-encoding data p end)
+           (declare (type pointer next))
+           (setf (parser-chunked-p parser) chunkedp)
+           (advance-to next)))
+       (:|upgrade|
+         (setf (parser-upgrade-p parser) T)
+         (skip-until-crlf)
+         ;; callback :header-value next next2
+         (advance))
+       (otherwise (skip-until-field-end)
+                  (parse-header-value)))))
 
-(defun-insane parse-header-value (data start end)
-  (declare (type simple-byte-vector data)
-           (type pointer start end))
-  (let* ((p start)
-         (byte (aref data p)))
-    (declare (type (unsigned-byte 8) byte)
-             (type pointer p))
-    (skip-while (or (= byte +space+)
-                    (= byte +tab+)))
-    (setq start p)
-    (skip-until (or (= byte +cr+)
-                    (= byte +lf+)))
-    (expect-crlf)
-    ;; callback :header-value start (1+ p)
-    (1+ p)))
+(defmacro parse-header-value ()
+  `(progn
+     (skip-while (or (= byte +space+)
+                     (= byte +tab+)))
+     (skip-until-crlf)
+     ;; callback :header-value start (1+ p)
+     (advance)))
 
 (defun-speedy parse-header-value-transfer-encoding (data start end)
   (declare (type simple-byte-vector data)
@@ -339,16 +345,14 @@
           (+cr+ (expect-byte +lf+)
                 ;; callback :header-value start next
                 (values T (1+ p)))
-          (+lf+ ;; callback :header-value start next
-           (values T (1+ p)))
           (otherwise
-           (skip-until (or (= byte +cr+) (= byte +lf+)))
-           (expect-crlf)
+           (skip-until-crlf)
+           (advance)
            ;; callback :header-value start next
            (values nil (1+ p))))
         (progn
-          (skip-until (or (= byte +cr+) (= byte +lf+)))
-          (expect-crlf)
+          (skip-until-crlf)
+          (advance)
           ;; callback :header-value start next
           (values nil (1+ p))))))
 
@@ -366,8 +370,8 @@
     (setq content-length (digit-byte-char-to-integer byte))
     (loop
       (advance)
-      (when (or (= byte +cr+) (= byte +lf+))
-        (expect-crlf)
+      (when (= byte +cr+)
+        (expect-byte +lf+)
         ;; callback :header-value start next
         (return (values (1+ p) content-length)))
       (unless (digit-byte-char-to-integer byte)
@@ -376,92 +380,60 @@
             (+ (* 10 content-length)
                (digit-byte-char-to-integer byte))))))
 
-(defmacro case-header-field-start ((data start end) &body clauses)
-  `(let* ((p ,start)
-          (end ,end)
-          (byte (aref ,data p)))
-     (declare (type (unsigned-byte 8) byte)
-              (type pointer p))
-     (casev= byte
-       ((+tab+ +space+)
-        (skip-while (or (= byte +tab+) (= byte +space+)))
-        ,@(cdr (assoc :value clauses)))
-       (+cr+ (expect-byte +lf+)
-             (incf p)
-             ,@(cdr (assoc :last clauses)))
-       (+lf+ (incf p)
-             ,@(cdr (assoc :last clauses)))
-       (otherwise ,@(cdr (assoc :field clauses))))))
+(defmacro case-header-line-start (&body clauses)
+  `(casev= byte
+     ((+tab+ +space+)
+      (skip-while (or (= byte +tab+) (= byte +space+)))
+      ,@(cdr (assoc :value clauses)))
+     (+cr+ (expect-byte +lf+)
+           (incf p)
+           ,@(cdr (assoc :last clauses)))
+     (otherwise ,@(cdr (assoc :field clauses)))))
 
-(defun-insane parse-header-line (parser data start end)
-  (declare (type simple-byte-vector data)
-           (type pointer start end))
-  (case-header-field-start (data start end)
-    (:field (multiple-value-bind (field-key next)
-                (parse-header-field data p end)
-              (declare (type symbol field-key)
-                       (type pointer next))
-              (case field-key
-                (:|content-length|
-                 (multiple-value-bind (next content-length)
-                     (parse-header-value-content-length data next end)
-                   (declare (type pointer next))
-                   (setf (parser-content-length parser) content-length)
-                   next))
-                (:|transfer-encoding|
-                 (multiple-value-bind (next chunkedp)
-                     (parse-header-value-transfer-encoding data next end)
-                   (declare (type pointer next))
-                   (setf (parser-chunked-p parser) chunkedp)
-                   next))
-                (:|upgrade|
-                 (setf (parser-upgrade-p parser) T)
-                 (let* ((p next)
-                        (byte (aref data p)))
-                   (declare (type pointer p)
-                            (type (unsigned-byte 8) byte))
-                   (skip-until (or (= byte +cr+) (= byte +lf+)))
-                   (expect-crlf)
-                   ;; callback :header-value next next2
-                   (1+ p)))
-                (otherwise
-                 (parse-header-value data next end)))))
+(defmacro parse-header-line ()
+  `(case-header-line-start
+    (:field (parse-header-field))
     ;; folding value
-    (:value (multiple-value-call #'values nil (parse-header-value data p end)))
-    (:last (values p T))))
+    (:value (parse-header-value))
+    (:last (return))))
 
 ;; TODO: check max header length
 (defun-speedy parse-headers (parser data start end)
-  (declare (type simple-byte-vector data)
+  (declare (type parser parser)
+           (type simple-byte-vector data)
            (type pointer start end))
-  (multiple-value-bind (field-key next completedp)
-      (parse-header-field data start end)
-    (declare (type pointer next))
-    ;; TODO: field-key specific things
-    (declare (ignore field-key))
-    (when completedp
-      ;; callback notify headers complete
-      (return-from parse-headers next))
+  (let* ((p start)
+         (byte (aref data p)))
+    (declare (type pointer p)
+             (type (unsigned-byte 8) byte))
+    ;; empty headers
+    (when (= byte +cr+)
+      (expect-byte +lf+)
+      (return-from parse-headers (1+ p)))
+    (parse-header-field)
     ;; skip #\:
-    (incf next)
-    (let ((next (parse-header-value data next end)))
-      (declare (type pointer next)
-               (dynamic-extent next))
-      (loop
-        (multiple-value-bind (next2 completedp)
-            (parse-header-line parser data next end)
-          (declare (type pointer next2))
-          (if completedp
-              (return next2)
-              (setq next next2)))))))
+    (advance)
+    (parse-header-value)
+    (advance)
+    (loop (parse-header-line))
+    p))
 
-(defun-careful parse-request (parser data &key (start 0) end)
-  (declare (type simple-byte-vector data))
+(defun-speedy parse-request (parser data &key (start 0) end)
+  (declare (type parser parser)
+           (type simple-byte-vector data))
   (let* ((p start)
          (byte (aref data p))
          (end (or end (length data))))
     (declare (type (unsigned-byte 8) byte)
              (type pointer p end))
+
+    (check-eof)
+
+    ;; skip first empty line (some clients add CRLF after POST content)
+    (when (= byte +cr+)
+      (expect-byte +lf+)
+      (advance))
+
     (multiple-value-bind (method next)
         (parse-method data p end)
       (declare (type pointer next))
@@ -481,5 +453,6 @@
 
     (advance)
     (expect-crlf)
+    (advance)
 
-    (multiple-value-call #'values parser data (parse-headers parser data (1+ p) end))))
+    (parse-headers parser data p end)))
