@@ -33,6 +33,7 @@
                  (:file "multipart-parser" :depends-on ("parser" "byte-vector" "error"))
                  (:file "byte-vector")
                  (:file "body-buffer" :depends-on ("error"))
+                 (:file "stateless-parser" :depends-on ("error" "byte-vector" "util"))
                  (:file "variables")
                  (:file "error")
                  (:file "util" :depends-on ("error")))))
