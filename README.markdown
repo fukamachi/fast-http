@@ -11,6 +11,8 @@ This is a fast HTTP request/response protocol parser for Common Lisp. Most parts
 
 NOTE: Deleted [PicoHTTPParser](https://github.com/h2o/picohttpparser) because the benchmark was wrong. It's **3.7 times faster** than fast-http. Amazing.
 
+NOTE: @y2q-actionman pointed out Node.js's [http-parser](https://github.com/joyent/http-parser) is designed to use less memory. fast-http consumes more memory spaces than http-parser. (See [#8](https://github.com/fukamachi/fast-http/issues/8))
+
 See [Benchmark](#benchmark) for the detail.
 
 ## Usage
