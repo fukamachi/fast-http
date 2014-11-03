@@ -66,7 +66,7 @@
 ;; Variables
 
 (declaim (type fixnum +max-header-line+))
-(defconstant +max-header-line+ 32
+(defconstant +max-header-line+ 1024
   "Maximum number of header lines allowed.
 
 This restriction is for protecting users' application
