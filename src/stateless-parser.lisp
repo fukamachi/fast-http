@@ -66,12 +66,13 @@
 (deftype pointer () 'integer)
 
 
+;;
 ;; Parser declaration
 
 (defstruct parser
   (method nil :type symbol)
   (http-major 0 :type fixnum)
-  (http-minor 0 :type fixnum)
+  (http-minor 9 :type fixnum)
   (content-length nil :type (or null integer))
   (chunked-p nil :type boolean)
   (upgrade-p nil :type boolean))
@@ -114,14 +115,21 @@
   `(when (= p end)
      (error 'eof)))
 
-(defmacro with-transaction (&body body)
+(defmacro with-transaction ((&key var) &body body)
   (with-gensyms (start e)
-    `(let ((,start p))
-       (handler-case (progn ,@body)
-         (eof (,e)
-           (if (eof-pointer ,e)
-               (error ,e)
-               (error 'eof :pointer ,start)))))))
+    (flet ((main-part ()
+             `(handler-case (progn ,@body)
+                (eof (,e)
+                  (if (eof-pointer ,e)
+                      (error ,e)
+                      (error 'eof :pointer ,(or var start)))))))
+      (if var
+          `(progn
+             (setq ,var p)
+             ,(main-part))
+          `(let ((,start p))
+             (declare (dynamic-extent ,start))
+             ,(main-part))))))
 
 (defmacro advance (&optional (degree 1))
   `(progn
@@ -136,8 +144,8 @@
      (setq byte (aref data p))))
 
 (defmacro skip-while (form)
-  `(loop do (advance)
-         while (progn ,form)))
+  `(loop while (progn ,form)
+         do (advance)))
 
 (defmacro skip-while-spaces ()
   '(skip-while (or (= byte +space+) (= byte +tab+))))
@@ -158,30 +166,40 @@
 (defmacro expect (form &optional (error ''expect-failed) (advance T))
   `(progn
      ,@(and advance `((advance)))
-     (unless (progn ,form)
-       (error ,error))))
+     ,(if error
+          `(unless (progn ,form)
+             (error ,error))
+          `(progn ,form))))
 
 (defmacro expect-byte (byte &optional (error ''expect-failed) (advance T))
   "Advance the pointer and check if the next byte is BYTE."
   `(expect (= byte ,byte) ,error ,advance))
 
-(defmacro expect-char (char &optional (error ''expect-failed) (advance T))
-  `(expect-byte ,(char-code char) ,error ,advance))
+(defmacro expect-char (char &optional (error ''expect-failed) (advance T) (case-sensitive T))
+  (if case-sensitive
+      `(expect-byte ,(char-code char) ,error ,advance)
+      `(expect (or (= byte ,(char-code char))
+                   (= byte ,(if (lower-case-p char)
+                                (- (char-code char) 32)
+                                (+ (char-code char) 32))))
+           ,error
+           ,advance)))
 
-(defmacro expect-string (string &optional (error ''expect-failed) (advance T))
+(defmacro expect-string (string &optional (error ''expect-failed) (advance T) (case-sensitive T))
   (if advance
       `(progn
          ,@(loop for char across string
-                 collect `(expect-char ,char ,error)))
+                 collect `(expect-char ,char ,error ,advance ,case-sensitive)))
       (when (/= 0 (length string))
         `(progn
-           (expect-char ,(aref string 0) ,error nil)
-           (expect-string ,(subseq string 1) ,error)))))
+           (expect-char ,(aref string 0) ,error nil ,case-sensitive)
+           (expect-string ,(subseq string 1) ,error T ,case-sensitive)))))
 
 (defmacro expect-crlf (&optional (error ''expect-failed))
   `(casev= byte
      (+cr+ (expect-byte +lf+ ,error))
-     (otherwise (error ,error))))
+     ,@(and error
+            `((otherwise (error ,error))))))
 
 (defmacro expect-one-of (strings &optional (error ''expect-failed) (case-sensitive T))
   (let ((expect-block (gensym "EXPECT-BLOCK")))
@@ -194,26 +212,28 @@
                  (alexandria:hash-table-alist map)))
              (build-case-byte (i strings)
                (let ((alist (grouping i strings)))
-                 `(case-byte byte
-                    ,@(loop for (char . candidates) in alist
-                            if (cdr candidates)
-                              collect `(,(if case-sensitive
-                                             char
-                                             (if (lower-case-p char)
-                                                 `(,char ,(code-char (- (char-code char) 32)))
-                                                 `(,char ,(code-char (+ (char-code char) 32)))))
-                                        (advance) ,(build-case-byte (1+ i) candidates))
-                            else
-                              collect `(,(if case-sensitive
-                                             char
-                                             (if (lower-case-p char)
-                                                 `(,char ,(code-char (- (char-code char) 32)))
-                                                 `(,char ,(code-char (+ (char-code char) 32)))))
-                                        (expect-string ,(subseq (string (car candidates)) (1+ i)) ,error)
-                                        (return-from ,expect-block ,(car candidates))))
-                    (otherwise ,(if error
-                                    `(error ,error)
-                                    `(return-from ,expect-block nil)))))))
+                 (if alist
+                     `(case-byte byte
+                        ,@(loop for (char . candidates) in alist
+                                if (cdr candidates)
+                                  collect `(,(if case-sensitive
+                                                 char
+                                                 (if (lower-case-p char)
+                                                     `(,char ,(code-char (- (char-code char) 32)))
+                                                     `(,char ,(code-char (+ (char-code char) 32)))))
+                                            (advance) ,(build-case-byte (1+ i) candidates))
+                                else
+                                  collect `(,(if case-sensitive
+                                                 char
+                                                 (if (lower-case-p char)
+                                                     `(,char ,(code-char (- (char-code char) 32)))
+                                                     `(,char ,(code-char (+ (char-code char) 32)))))
+                                            (expect-string ,(subseq (string (car candidates)) (1+ i)) ,error T ,case-sensitive)
+                                            (return-from ,expect-block ,(car candidates))))
+                        (otherwise ,(if error
+                                        `(error ,error)
+                                        `(return-from ,expect-block nil))))
+                     `(return-from ,expect-block ,(car strings))))))
       `(block ,expect-block
          ,(build-case-byte 0 strings)))))
 
@@ -266,6 +286,20 @@
         #\x    #\y    #\z   #\Nul   #\|   #\Nul   #\~   #\Nul )
   :test 'equalp)
 
+(declaim (type (simple-array fixnum (128)) +unhex+))
+(define-constant +unhex+
+    #(-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+      -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+      -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+       0  1  2  3  4  5  6  7  8  9 -1 -1 -1 -1 -1 -1
+      -1 10 11 12 13 14 15 -1 -1 -1 -1 -1 -1 -1 -1 -1
+      -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+      -1 10 11 12 13 14 15 -1 -1 -1 -1 -1 -1 -1 -1 -1
+      -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1)
+  :test 'equalp)
+
+(defun-insane unhex-byte (byte)
+  (aref +unhex+ byte))
 
 ;;
 ;; Main
@@ -277,37 +311,39 @@
          (byte (aref data p)))
     (declare (type (unsigned-byte 8) byte)
              (type pointer p))
-    (values (prog1 (expect-one-of
-                       (:CONNECT
-                        :COPY
-                        :CHECKOUT
-                        :DELETE
-                        :GET
-                        :HEAD
-                        :LOCK
-                        :MKCOL
-                        :MKCALENDAR
-                        :MKACTIVITY
-                        :MOVE
-                        :MERGE
-                        :M-SEARCH
-                        :NOTIFY
-                        :OPTIONS
-                        :POST
-                        :PROPFIND
-                        :PROPPATCH
-                        :PUT
-                        :PURGE
-                        :PATCH
-                        :REPORT
-                        :SEARCH
-                        :SUBSCRIBE
-                        :TRACE
-                        :UNLOCK
-                        :UNSUBSCRIBE)
-                       'invalid-method)
-              (expect-byte +space+ 'invalid-method))
-            p)))
+    (with-transaction (:var start)
+      (values
+       (prog1 (expect-one-of
+                  (:CONNECT
+                   :COPY
+                   :CHECKOUT
+                   :DELETE
+                   :GET
+                   :HEAD
+                   :LOCK
+                   :MKCOL
+                   :MKCALENDAR
+                   :MKACTIVITY
+                   :MOVE
+                   :MERGE
+                   :M-SEARCH
+                   :NOTIFY
+                   :OPTIONS
+                   :POST
+                   :PROPFIND
+                   :PROPPATCH
+                   :PUT
+                   :PURGE
+                   :PATCH
+                   :REPORT
+                   :SEARCH
+                   :SUBSCRIBE
+                   :TRACE
+                   :UNLOCK
+                   :UNSUBSCRIBE)
+                  'invalid-method)
+         (expect-byte +space+ 'invalid-method))
+       p))))
 
 (defun-insane parse-url (parser callbacks data start end)
   (declare (type simple-byte-vector data)
@@ -316,9 +352,10 @@
          (byte (aref data p)))
     (declare (type (unsigned-byte 8) byte)
              (type pointer p))
-    (skip-while (or (<= (char-code #\!) byte (char-code #\~))
-                    (<= 128 byte)))
-    (callback-data :url parser callbacks data start p)
+    (with-transaction (:var start)
+      (skip-while (or (<= (char-code #\!) byte (char-code #\~))
+                      (<= 128 byte)))
+      (callback-data :url parser callbacks data start p))
     p))
 
 (defun-insane parse-http-version (data start end)
@@ -329,14 +366,15 @@
          major minor)
     (declare (type (unsigned-byte 8) byte)
              (type pointer p end))
-    (expect-string "HTTP/" 'expect-failed nil)
-    ;; Expect the HTTP major is only once digit.
-    (expect (digit-byte-char-p byte))
-    (setq major (digit-byte-char-to-integer byte))
-    (expect-byte (char-code #\.))
-    ;; Expect the HTTP minor is only once digit.
-    (expect (digit-byte-char-p byte))
-    (setq minor (digit-byte-char-to-integer byte))
+    (with-transaction (:var start)
+      (expect-string "HTTP/" 'expect-failed nil)
+      ;; Expect the HTTP major is only once digit.
+      (expect (digit-byte-char-p byte))
+      (setq major (digit-byte-char-to-integer byte))
+      (expect-byte (char-code #\.))
+      ;; Expect the HTTP minor is only once digit.
+      (expect (digit-byte-char-p byte))
+      (setq minor (digit-byte-char-to-integer byte)))
 
     (values major minor p)))
 
@@ -379,7 +417,6 @@
            ;; skip #\: and leading spaces
            (advance) (skip-while-spaces)
            (setf (parser-upgrade-p parser) T)
-           (skip-while-spaces)
            (let ((value-start p))
              (skip-until-crlf)
              (advance)
@@ -387,17 +424,21 @@
              (callback-data :header-value parser callbacks data value-start (- p 2))))
          (otherwise (skip-until-field-end)
                     (setq field-end p)
+                    ;; skip #\: and leading spaces
+                    (advance) (skip-while-spaces)
+                    ;; continue to the next line
+                    (when (= byte +cr+)
+                      (expect-byte +lf+)
+                      (advance) (skip-while-spaces))
                     (parse-header-value field-start field-end))))))
 
 (defmacro parse-header-value (&optional field-start field-end)
-  `(progn
-     (skip-while-spaces)
-     (let ((value-start p))
-       (skip-until-crlf)
-       (advance)
-       ,@(and field-start field-end
-              `((callback-data :header-field parser callbacks data ,field-start ,field-end)))
-       (callback-data :header-value parser callbacks data value-start (- p 2)))))
+  `(let ((value-start p))
+     (skip-until-crlf)
+     (advance)
+     ,@(and field-start field-end
+            `((callback-data :header-field parser callbacks data ,field-start ,field-end)))
+     (callback-data :header-value parser callbacks data value-start (- p 2))))
 
 (defun-speedy parse-header-value-transfer-encoding (data start end)
   (declare (type simple-byte-vector data)
@@ -406,14 +447,17 @@
          (byte (aref data p)))
     (declare (type (unsigned-byte 8) byte)
              (type pointer p))
-    (if (expect-one-of ("chunked") nil nil)
-        (casev= byte
-          (+cr+ (expect-byte +lf+)
-                (values start (1- p) (1+ p) t))
-          (otherwise
-           (skip-until-crlf)
-           (advance)
-           (values start (- p 2) p nil)))
+
+    (if (expect-string "chunked" nil nil nil)
+        (progn
+          (advance)
+          (casev= byte
+            (+cr+ (expect-byte +lf+)
+                  (values start (1- p) (1+ p) t))
+            (otherwise
+             (skip-until-crlf)
+             (advance)
+             (values start (- p 2) p nil))))
         (progn
           (skip-until-crlf)
           (advance)
@@ -436,7 +480,7 @@
       (when (= byte +cr+)
         (expect-byte +lf+)
         (return (values start (1- p) (1+ p) content-length)))
-      (unless (digit-byte-char-to-integer byte)
+      (unless (digit-byte-char-p byte)
         (error 'invalid-content-length))
       (setq content-length
             (+ (* 10 content-length)
@@ -471,11 +515,31 @@
     (when (= byte +cr+)
       (expect-byte +lf+)
       (return-from parse-headers (1+ p)))
-    (with-transaction
+    (with-transaction (:var start)
       (parse-header-field-and-value))
-    (loop (with-transaction (parse-header-line)))
-    (callback-notify :headers-complete parser callbacks)
+    (loop
+      (with-transaction (:var start)
+        (parse-header-line)))
     p))
+
+(defun-speedy read-body-data (parser callbacks data start end)
+  (declare (type parser parser)
+           (type simple-byte-vector data)
+           (type pointer start end))
+  (let ((readable-count (the pointer (- end start))))
+    (declare (dynamic-extent readable-count)
+             (type pointer readable-count))
+    (if (<= (parser-content-length parser) readable-count)
+        (let ((body-end (+ start (parser-content-length parser))))
+          (declare (dynamic-extent body-end))
+          (setf (parser-content-length parser) 0)
+          (callback-data :body parser callbacks data start body-end)
+          body-end)
+        ;; still needs to read
+        (progn
+          (decf (parser-content-length parser) readable-count)
+          (callback-data :body parser callbacks data start end)
+          (error 'eof :pointer end)))))
 
 (defun-speedy parse-body (parser callbacks data start end)
   (declare (type parser parser)
@@ -492,18 +556,61 @@
      start)
     (otherwise
      ;; Content-Length header given and non-zero
-     (let ((readable-count (- end start)))
-       (if (<= (parser-content-length parser) readable-count)
-           (let ((body-end (+ start (parser-content-length parser))))
-             (setf (parser-content-length parser) 0)
-             (callback-data :body parser callbacks data start body-end)
-             (callback-notify :message-complete parser callbacks)
-             body-end)
-           ;; still needs to read
-           (progn
-             (decf (parser-content-length parser) readable-count)
-             (callback-data :body parser callbacks data start end)
-             (error 'eof :pointer end)))))))
+     (read-body-data parser callbacks data start end)
+     (callback-notify :message-complete parser callbacks))))
+
+(defmacro parse-chunked-size ()
+  `(let ((unhex-val (unhex-byte byte)))
+     (declare (type fixnum unhex-val)
+              (dynamic-extent unhex-val))
+     (when (= unhex-val -1)
+       (error 'invalid-chunk-size))
+     (setf (parser-content-length parser) unhex-val)
+
+     (loop
+       (advance)
+       (cond
+         ((= byte +cr+)
+          (expect-byte +lf+)
+          (advance)
+          (return))
+         (T
+          (setq unhex-val (unhex-byte byte))
+          (cond
+            ((= unhex-val -1)
+             (case-byte byte
+               ((#\; #\Space)
+                ;; skipping chunk parameters
+                (skip-until-crlf)
+                (advance)
+                (return))
+               (otherwise
+                (error 'invalid-chunk-size))))
+            (T
+             (setf (parser-content-length parser)
+                   (+ (* 16 (parser-content-length parser)) unhex-val)))))))))
+
+(defun-speedy parse-chunked-body (parser callbacks data start end)
+  (declare (type parser parser)
+           (type simple-byte-vector data)
+           (type pointer start end))
+  (let* ((p start)
+         (byte (aref data p)))
+    (declare (type pointer p)
+             (type (unsigned-byte 8) byte))
+
+    (with-transaction (:var start)
+      (parse-chunked-size))
+
+    (cond
+      ((zerop (parser-content-length parser))
+       ;; trailing
+       (parse-headers parser callbacks data p end))
+      (T
+       (advance-to (read-body-data parser callbacks data p end))
+       (expect-crlf)
+       (advance)
+       (parse-chunked-body parser callbacks data p end)))))
 
 (defun-speedy parse-request (parser callbacks data &key (start 0) end)
   (declare (type parser parser)
@@ -532,19 +639,36 @@
     (let ((next (parse-url parser callbacks data p end)))
       (declare (type pointer next))
       (advance-to next))
-    (skip-while (= byte +space+))
-    (multiple-value-bind (major minor next)
-        (parse-http-version data p end)
-      (declare (type pointer next))
-      (setf (parser-http-major parser) major
-            (parser-http-minor parser) minor)
-      (advance-to next))
 
-    (advance)
-    (expect-crlf)
-    (advance)
+    (skip-while (= byte +space+))
+
+    (cond
+      ;; No HTTP version
+      ((= byte +cr+)
+       (expect-byte +lf+)
+       (advance))
+      (T (multiple-value-bind (major minor next)
+             (parse-http-version data p end)
+           (declare (type pointer next))
+           (setf (parser-http-major parser) major
+                 (parser-http-minor parser) minor)
+           (advance-to next))
+
+         (advance)
+         (expect-crlf)
+         (advance)))
 
     (callback-notify :first-line parser callbacks)
 
     (setq p (parse-headers parser callbacks data p end))
-    (parse-body parser callbacks data p end)))
+
+    (callback-notify :headers-complete parser callbacks)
+
+    ;; Exit, the rest of the connect is in a different protocol.
+    (when (parser-upgrade-p parser)
+      (callback-notify :message-complete parser callbacks)
+      (return-from parse-request p))
+
+    (if (parser-chunked-p parser)
+        (parse-chunked-body parser callbacks data p end)
+        (parse-body parser callbacks data p end))))
