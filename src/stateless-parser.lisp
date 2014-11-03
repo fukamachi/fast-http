@@ -91,10 +91,15 @@
   (body nil :type (or null function))
   (message-complete nil :type (or null function)))
 
-(defmacro callback-data (name parser data start end)
+(defmacro callback-data (name parser callbacks data start end)
   (with-gensyms (callback)
-    `(when-let (,callback (,(intern (format nil "~A-~A" :callbacks name)) callbacks))
+    `(when-let (,callback (,(intern (format nil "~A-~A" :callbacks name)) ,callbacks))
        (funcall ,callback ,parser ,data ,start ,end))))
+
+(defmacro callback-notify (name parser callbacks)
+  (with-gensyms (callback)
+    `(when-let (,callback (,(intern (format nil "~A-~A" :callbacks name)) ,callbacks))
+       (funcall ,callback ,parser))))
 
 
 ;;
@@ -313,7 +318,7 @@
              (type pointer p))
     (skip-while (or (<= (char-code #\!) byte (char-code #\~))
                     (<= 128 byte)))
-    (callback-data :url parser data start p)
+    (callback-data :url parser callbacks data start p)
     p))
 
 (defun-insane parse-http-version (data start end)
@@ -356,8 +361,8 @@
              (declare (type pointer next))
              (setf (parser-content-length parser) content-length)
              (advance-to next)
-             (callback-data :header-field parser data field-start field-end)
-             (callback-data :header-value parser data value-start value-end)))
+             (callback-data :header-field parser callbacks data field-start field-end)
+             (callback-data :header-value parser callbacks data value-start value-end)))
          (:|transfer-encoding|
            (setq field-end p)
            ;; skip #\: and leading spaces
@@ -367,8 +372,8 @@
              (declare (type pointer next))
              (setf (parser-chunked-p parser) chunkedp)
              (advance-to next)
-             (callback-data :header-field parser data field-start field-end)
-             (callback-data :header-value parser data value-start value-end)))
+             (callback-data :header-field parser callbacks data field-start field-end)
+             (callback-data :header-value parser callbacks data value-start value-end)))
          (:|upgrade|
            (setq field-end p)
            ;; skip #\: and leading spaces
@@ -378,8 +383,8 @@
            (let ((value-start p))
              (skip-until-crlf)
              (advance)
-             (callback-data :header-field parser data field-start field-end)
-             (callback-data :header-value parser data value-start (- p 2))))
+             (callback-data :header-field parser callbacks data field-start field-end)
+             (callback-data :header-value parser callbacks data value-start (- p 2))))
          (otherwise (skip-until-field-end)
                     (setq field-end p)
                     (parse-header-value field-start field-end))))))
@@ -391,8 +396,8 @@
        (skip-until-crlf)
        (advance)
        ,@(and field-start field-end
-              `((callback-data :header-field parser data ,field-start ,field-end)))
-       (callback-data :header-value parser data value-start (- p 2)))))
+              `((callback-data :header-field parser callbacks data ,field-start ,field-end)))
+       (callback-data :header-value parser callbacks data value-start (- p 2)))))
 
 (defun-speedy parse-header-value-transfer-encoding (data start end)
   (declare (type simple-byte-vector data)
@@ -469,7 +474,36 @@
     (with-transaction
       (parse-header-field-and-value))
     (loop (with-transaction (parse-header-line)))
+    (callback-notify :headers-complete parser callbacks)
     p))
+
+(defun-speedy parse-body (parser callbacks data start end)
+  (declare (type parser parser)
+           (type simple-byte-vector data)
+           (type pointer start end))
+  (case (parser-content-length parser)
+    (0
+     ;; Content-Length header given but zero: Content-Length: 0\r\n
+     (callback-notify :message-complete parser callbacks)
+     start)
+    ('nil
+     ;; If this is a HTTP request, :message-complete
+     (callback-notify :message-complete parser callbacks)
+     start)
+    (otherwise
+     ;; Content-Length header given and non-zero
+     (let ((readable-count (- end start)))
+       (if (<= (parser-content-length parser) readable-count)
+           (let ((body-end (+ start (parser-content-length parser))))
+             (setf (parser-content-length parser) 0)
+             (callback-data :body parser callbacks data start body-end)
+             (callback-notify :message-complete parser callbacks)
+             body-end)
+           ;; still needs to read
+           (progn
+             (decf (parser-content-length parser) readable-count)
+             (callback-data :body parser callbacks data start end)
+             (error 'eof :pointer end)))))))
 
 (defun-speedy parse-request (parser callbacks data &key (start 0) end)
   (declare (type parser parser)
@@ -486,6 +520,8 @@
     (when (= byte +cr+)
       (expect-byte +lf+)
       (advance))
+
+    (callback-notify :message-begin parser callbacks)
 
     (multiple-value-bind (method next)
         (parse-method data p end)
@@ -508,4 +544,7 @@
     (expect-crlf)
     (advance)
 
-    (parse-headers parser callbacks data p end)))
+    (callback-notify :first-line parser callbacks)
+
+    (setq p (parse-headers parser callbacks data p end))
+    (parse-body parser callbacks data p end)))
