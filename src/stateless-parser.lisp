@@ -22,12 +22,14 @@
   (:export :make-parser
            :make-callbacks
            :parser-method
+           :parser-status-code
            :parser-http-major
            :parser-http-minor
            :parser-content-length
            :parser-chunked-p
            :parser-upgrade-p
-           :parse-request))
+           :parse-request
+           :parse-response))
 (in-package :fast-http.stateless-parser)
 
 ;;
@@ -76,6 +78,7 @@ us a never-ending header that the application keeps buffering.")
 ;; Types
 
 (deftype pointer () 'integer)
+(deftype status-code () '(integer 0 10000))
 
 
 ;;
@@ -85,6 +88,7 @@ us a never-ending header that the application keeps buffering.")
   (method nil :type symbol)
   (http-major 0 :type fixnum)
   (http-minor 9 :type fixnum)
+  (status-code 0 :type status-code)
   (content-length nil :type (or null integer))
   (chunked-p nil :type boolean)
   (upgrade-p nil :type boolean)
@@ -393,6 +397,42 @@ us a never-ending header that the application keeps buffering.")
 
     (values major minor p)))
 
+(defun-insane parse-status-code (parser callbacks data start end)
+  (declare (type simple-byte-vector data)
+           (type pointer start end))
+  (let* ((p start)
+         (byte (aref data p)))
+    (declare (type (unsigned-byte 8) byte)
+             (type pointer p end))
+    (unless (digit-byte-char-p byte)
+      (error 'invalid-status))
+    (setf (parser-status-code parser) (digit-byte-char-to-integer byte))
+    (with-transaction (:var start)
+      (loop
+        (advance)
+        (cond
+          ((digit-byte-char-p byte)
+           (setf (parser-status-code parser)
+                 (+ (the fixnum (* 10 (parser-status-code parser)))
+                    (digit-byte-char-to-integer byte)))
+           (when (< 999 (parser-status-code parser))
+             (error 'invalid-status :status-code (parser-status-code parser))))
+          ((= byte +space+)
+           ;; Reading the status text
+           (skip-while (= byte +space+))
+           (let ((status-text-start p))
+             (skip-until-crlf)
+             (callback-data :status parser callbacks data status-text-start (- p 1)))
+           (advance)
+           (return))
+          ((= byte +cr+)
+           ;; No status text
+           (expect-byte +lf+)
+           (advance)
+           (return))
+          (T (error 'invalid-status)))))
+    p))
+
 (defmacro parse-header-field-and-value ()
   `(macrolet ((skip-until-field-end ()
                 `(do ((char (svref +tokens+ byte)
@@ -492,14 +532,18 @@ us a never-ending header that the application keeps buffering.")
     (setq content-length (digit-byte-char-to-integer byte))
     (loop
       (advance)
-      (when (= byte +cr+)
-        (expect-byte +lf+)
-        (return (values start (1- p) (1+ p) content-length)))
-      (unless (digit-byte-char-p byte)
-        (error 'invalid-content-length))
-      (setq content-length
-            (+ (* 10 content-length)
-               (digit-byte-char-to-integer byte))))))
+      (cond
+        ((digit-byte-char-p byte)
+         (setq content-length
+               (+ (* 10 content-length)
+                  (digit-byte-char-to-integer byte))))
+        ((= byte +cr+)
+         (expect-byte +lf+)
+         (return (values start (1- p) (1+ p) content-length)))
+        ((= byte +space+)
+         ;; Discard spaces
+         )
+        (T (error 'invalid-content-length))))))
 
 (defmacro case-header-line-start (&body clauses)
   `(casev= byte
@@ -557,6 +601,23 @@ us a never-ending header that the application keeps buffering.")
           (callback-data :body parser callbacks data start end)
           (error 'eof :pointer end)))))
 
+(defun-speedy http-message-needs-eof-p (parser)
+  (let ((status-code (parser-status-code parser)))
+    (declare (type status-code status-code))
+    (when (= status-code 0) ;; probably request
+      (return-from http-message-needs-eof-p nil))
+
+    (when (and (< 99 status-code 200) ;; 1xx e.g. Continue
+               (= status-code 204)    ;; No Content
+               (= status-code 304)    ;; Not Modified
+               )
+      (return-from http-message-needs-eof-p nil))
+
+    (when (or (parser-chunked-p parser)
+              (parser-content-length parser))
+      (return-from http-message-needs-eof-p nil))
+    T))
+
 (defun-speedy parse-body (parser callbacks data start end)
   (declare (type parser parser)
            (type simple-byte-vector data)
@@ -567,9 +628,15 @@ us a never-ending header that the application keeps buffering.")
      (callback-notify :message-complete parser callbacks)
      start)
     ('nil
-     ;; If this is a HTTP request, :message-complete
-     (callback-notify :message-complete parser callbacks)
-     start)
+     (if (http-message-needs-eof-p parser)
+         ;; read until EOF
+         (progn
+           (callback-data :body parser callbacks data start end)
+           end)
+         ;; message complete
+         (progn
+           (callback-notify :message-complete parser callbacks)
+           end)))
     (otherwise
      ;; Content-Length header given and non-zero
      (read-body-data parser callbacks data start end)
@@ -685,6 +752,42 @@ us a never-ending header that the application keeps buffering.")
     (when (parser-upgrade-p parser)
       (callback-notify :message-complete parser callbacks)
       (return-from parse-request p))
+
+    (if (parser-chunked-p parser)
+        (parse-chunked-body parser callbacks data p end)
+        (parse-body parser callbacks data p end))))
+
+(defun-speedy parse-response (parser callbacks data &key (start 0) end)
+  (declare (type parser parser)
+           (type simple-byte-vector data))
+  (let* ((p start)
+         (byte (aref data p))
+         (end (or end (length data))))
+    (declare (type (unsigned-byte 8) byte)
+             (type pointer p end))
+
+    (multiple-value-bind (major minor next)
+        (parse-http-version data p end)
+      (declare (type pointer next))
+      (setf (parser-http-major parser) major
+            (parser-http-minor parser) minor)
+      (advance-to next))
+
+    (advance)
+
+    (cond
+      ((= byte +space+)
+       (advance)
+       (advance-to (parse-status-code parser callbacks data p end)))
+      ((= byte +cr+)
+       (expect-byte +lf+)
+       (advance))
+      (T (error 'invalid-version)))
+
+    (callback-notify :first-line parser callbacks)
+
+    (setq p (parse-headers parser callbacks data p end))
+    (setf (parser-header-read parser) 0)
 
     (if (parser-chunked-p parser)
         (parse-chunked-body parser callbacks data p end)
