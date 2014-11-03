@@ -61,6 +61,18 @@
 
 
 ;;
+;; Variables
+
+(declaim (type fixnum +max-header-line+))
+(defconstant +max-header-line+ 32
+  "Maximum number of header lines allowed.
+
+This restriction is for protecting users' application
+against denial-of-service attacks where the attacker feeds
+us a never-ending header that the application keeps buffering.")
+
+
+;;
 ;; Types
 
 (deftype pointer () 'integer)
@@ -75,7 +87,10 @@
   (http-minor 9 :type fixnum)
   (content-length nil :type (or null integer))
   (chunked-p nil :type boolean)
-  (upgrade-p nil :type boolean))
+  (upgrade-p nil :type boolean)
+
+  ;; private
+  (header-read 0 :type fixnum))
 
 
 ;;
@@ -502,7 +517,6 @@
     (:value (parse-header-value))
     (:last (return))))
 
-;; TODO: check max header length
 (defun-speedy parse-headers (parser callbacks data start end)
   (declare (type parser parser)
            (type simple-byte-vector data)
@@ -518,6 +532,8 @@
     (with-transaction (:var start)
       (parse-header-field-and-value))
     (loop
+      (when (= +max-header-line+ (incf (parser-header-read parser)))
+        (error 'header-overflow))
       (with-transaction (:var start)
         (parse-header-line)))
     p))
@@ -663,6 +679,7 @@
     (setq p (parse-headers parser callbacks data p end))
 
     (callback-notify :headers-complete parser callbacks)
+    (setf (parser-header-read parser) 0)
 
     ;; Exit, the rest of the connect is in a different protocol.
     (when (parser-upgrade-p parser)
