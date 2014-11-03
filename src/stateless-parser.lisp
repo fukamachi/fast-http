@@ -441,51 +441,69 @@ us a never-ending header that the application keeps buffering.")
                    (declare (type character char))
                    (when (char= char #\Nul)
                      (error 'invalid-header-token))
-                   (advance))))
+                   (advance)))
+              (skip-until-value-start-and (&body body)
+                `(progn
+                    ;; skip #\: and leading spaces
+                   (advance)
+                   (skip-while-spaces)
+                   (casev= byte
+                     (+cr+
+                      ;; continue to the next line
+                      (expect-byte +lf+)
+                      (advance)
+                      (casev= byte
+                        ((+space+ +tab+)
+                         (skip-while-spaces)
+                         (if (= byte +cr+)
+                             ;; empty body
+                             (progn
+                               (expect-byte +lf+)
+                               (advance)
+                               (callback-data :header-field parser callbacks data field-start field-end)
+                               (callback-data :header-value parser callbacks data p p))
+                             (progn ,@body)))
+                        (otherwise
+                         ;; empty body
+                         (callback-data :header-field parser callbacks data field-start field-end)
+                         (callback-data :header-value parser callbacks data p p))))
+                     (otherwise ,@body)))))
      (let ((field-start p) field-end)
        (declare (dynamic-extent field-start field-end))
        (case-expect-header-field ("content-length" "transfer-encoding" "upgrade")
          (:|content-length|
            (setq field-end p)
-           ;; skip #\: and leading spaces
-           (advance) (skip-while-spaces)
-           (multiple-value-bind (value-start value-end next content-length)
-               (parse-header-value-content-length data p end)
-             (declare (type pointer next))
-             (setf (parser-content-length parser) content-length)
-             (advance-to next)
-             (callback-data :header-field parser callbacks data field-start field-end)
-             (callback-data :header-value parser callbacks data value-start value-end)))
+           (skip-until-value-start-and
+            (multiple-value-bind (value-start value-end next content-length)
+                (parse-header-value-content-length data p end)
+              (declare (type pointer next))
+              (setf (parser-content-length parser) content-length)
+              (advance-to next)
+              (callback-data :header-field parser callbacks data field-start field-end)
+              (callback-data :header-value parser callbacks data value-start value-end))))
          (:|transfer-encoding|
            (setq field-end p)
-           ;; skip #\: and leading spaces
-           (advance) (skip-while-spaces)
-           (multiple-value-bind (value-start value-end next chunkedp)
-               (parse-header-value-transfer-encoding data p end)
-             (declare (type pointer next))
-             (setf (parser-chunked-p parser) chunkedp)
-             (advance-to next)
-             (callback-data :header-field parser callbacks data field-start field-end)
-             (callback-data :header-value parser callbacks data value-start value-end)))
+           (skip-until-value-start-and
+            (multiple-value-bind (value-start value-end next chunkedp)
+                (parse-header-value-transfer-encoding data p end)
+              (declare (type pointer next))
+              (setf (parser-chunked-p parser) chunkedp)
+              (advance-to next)
+              (callback-data :header-field parser callbacks data field-start field-end)
+              (callback-data :header-value parser callbacks data value-start value-end))))
          (:|upgrade|
            (setq field-end p)
-           ;; skip #\: and leading spaces
-           (advance) (skip-while-spaces)
            (setf (parser-upgrade-p parser) T)
-           (let ((value-start p))
-             (skip-until-crlf)
-             (advance)
-             (callback-data :header-field parser callbacks data field-start field-end)
-             (callback-data :header-value parser callbacks data value-start (- p 2))))
+           (skip-until-value-start-and
+            (let ((value-start p))
+              (skip-until-crlf)
+              (advance)
+              (callback-data :header-field parser callbacks data field-start field-end)
+              (callback-data :header-value parser callbacks data value-start (- p 2)))))
          (otherwise (skip-until-field-end)
                     (setq field-end p)
-                    ;; skip #\: and leading spaces
-                    (advance) (skip-while-spaces)
-                    ;; continue to the next line
-                    (when (= byte +cr+)
-                      (expect-byte +lf+)
-                      (advance) (skip-while-spaces))
-                    (parse-header-value field-start field-end))))))
+                    (skip-until-value-start-and
+                     (parse-header-value field-start field-end)))))))
 
 (defmacro parse-header-value (&optional field-start field-end)
   `(let ((value-start p))
