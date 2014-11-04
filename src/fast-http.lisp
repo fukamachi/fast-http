@@ -104,6 +104,10 @@
         parsing-header-field
         data-buffer
 
+        chunkedp
+        content-length
+
+        header-complete-p
         completedp)
     (declare (type function header-value-collector))
     (flet ((collect-prev-header-value ()
@@ -157,10 +161,12 @@
                                                   :displaced-to data
                                                   :displaced-index-offset start)))
              :headers-complete (lambda (http)
-                                 (declare (ignore http))
                                  (collect-prev-header-value)
                                  (when header-callback
-                                   (funcall (the function header-callback) headers)))
+                                   (funcall (the function header-callback) headers))
+                                 (setq header-complete-p t)
+                                 (setq chunkedp (http-chunked-p http)
+                                       content-length (http-content-length http)))
              :body (and body-callback
                         (lambda (http data start end)
                           (declare (ignore http)
@@ -174,8 +180,6 @@
              :message-complete (lambda (http)
                                  (declare (ignore http))
                                  (collect-prev-header-value)
-                                 (when finish-callback
-                                   (funcall (the function finish-callback)))
                                  (setq completedp t)))))
 
     (lambda (data &key (start 0) end)
@@ -201,7 +205,14 @@
                                     (http-mark http))
                                  :element-type '(unsigned-byte 8)
                                  :displaced-to data
-                                 :displaced-index-offset (http-mark http)))))))))))
+                                 :displaced-index-offset (http-mark http)))))
+           (when (and header-complete-p
+                      (not chunkedp)
+                      (not (numberp content-length)))
+             (setq completedp t))
+           (when (and completedp finish-callback)
+             (funcall (the function finish-callback))))))
+      (values http header-complete-p completedp))))
 
 #+todo
 (defun find-boundary (content-type)
