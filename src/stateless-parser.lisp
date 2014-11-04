@@ -24,7 +24,6 @@
                 :when-let)
   (:export :make-ll-parser
            :make-ll-callbacks
-           :parser-type
            :parser-method
            :parser-status-code
            :parser-http-major
@@ -34,7 +33,6 @@
            :parser-upgrade-p
            :parse-request
            :parse-response
-           :http-parse
 
            :eof
            :eof-pointer
@@ -95,7 +93,6 @@ us a never-ending header that the application keeps buffering.")
 ;; Parser declaration
 
 (defstruct (ll-parser (:conc-name :parser-))
-  (type :both :type keyword)
   (method nil :type symbol)
   (http-major 0 :type fixnum)
   (http-minor 9 :type fixnum)
@@ -812,44 +809,8 @@ us a never-ending header that the application keeps buffering.")
         (parse-chunked-body parser callbacks data p end)
         (parse-body parser callbacks data p end))))
 
-(defun-speedy http-parse (parser callbacks data &key (start 0) end)
-  (declare (type parser parser)
-           (type simple-byte-vector data)
-           (type pointer start))
-
-  (case (parser-type parser)
-    (:both)
-    (:request
-     (return-from http-parse
-       (parse-request parser callbacks data :start start :end end)))
-    (:response
-     (return-from http-parse
-       (parse-response parser callbacks data :start start :end end))))
-
-  (let ((end (or end (length data))))
-    (declare (type pointer end))
-    (when (= start end)
-      (error 'eof :pointer start))
-    (let ((byte (aref data start)))
-      (declare (type (unsigned-byte 8) byte))
-      (case-byte byte
-        (#\H
-         (when (= (1+ start) end)
-           (error 'eof :pointer start))
-         (setq byte (aref data (1+ start)))
-         (case-byte byte
-           (#\T (setf (parser-type parser) :response)
-                (parse-response parser callbacks data :start start :end end))
-           (#\E (setf (parser-type parser) :request)
-                (parse-request parser callbacks data :start start :end end))
-           (otherwise
-            (error 'invalid-constant))))
-        (otherwise
-         (setf (parser-type parser) :request)
-         (parse-request parser callbacks data :start start :end end))))))
-
 (defun-careful make-parser (type &key first-line-callback header-callback body-callback finish-callback)
-  (let ((ll-parser (make-ll-parser :type type))
+  (let ((ll-parser (make-ll-parser))
         callbacks
 
         (parse-fn (ecase type
