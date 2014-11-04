@@ -31,7 +31,10 @@
            :parser-upgrade-p
            :parse-request
            :parse-response
-           :http-parse))
+           :http-parse
+
+           :eof
+           :eof-pointer))
 (in-package :fast-http.stateless-parser)
 
 ;;
