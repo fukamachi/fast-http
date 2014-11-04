@@ -697,24 +697,30 @@ us a never-ending header that the application keeps buffering.")
     (declare (type pointer p)
              (type (unsigned-byte 8) byte))
 
-    (when (= (http-state http) +state-chunk-size+)
-      (parse-chunked-size)
-      (setf (http-mark http) p)
-      (setf (http-state http) +state-body+))
+    (tagbody
+       (when (= (http-state http) +state-body+)
+         (go body))
 
-    (when (= (http-state http) +state-body+)
-      (cond
-        ((zerop (http-content-length http))
-         ;; trailing
-         (setf (http-state http) +state-headers+)
-         (parse-headers http callbacks data p end))
-        (T
-         (advance-to (read-body-data http callbacks data p end))
-         (expect-crlf)
-         (advance)
-         (setf (http-mark http) p)
-         (setf (http-state http) +state-chunk-size+)
-         (parse-chunked-body http callbacks data p end))))))
+     chunk-size
+       (parse-chunked-size)
+       (setf (http-mark http) p)
+       (setf (http-state http) +state-body+)
+
+     body
+       (cond
+         ((zerop (http-content-length http))
+          ;; trailing
+          (setf (http-state http) +state-headers+)
+          (return-from parse-chunked-body
+            (parse-headers http callbacks data p end)))
+         (T
+          (advance-to (read-body-data http callbacks data p end))
+          (expect-crlf)
+          (advance)
+          (setf (http-mark http) p)
+          (setf (http-state http) +state-chunk-size+)
+          (return-from parse-chunked-body
+            (parse-chunked-body http callbacks data p end)))))))
 
 (defun-speedy parse-request (http callbacks data &key (start 0) end)
   (declare (type http http)
@@ -727,67 +733,79 @@ us a never-ending header that the application keeps buffering.")
     (setf (http-mark http) start)
     (check-eof)
 
-    (when (= (http-state http) +state-first-line+)
-      ;; skip first empty line (some clients add CRLF after POST content)
-      (when (= byte +cr+)
-        (expect-byte +lf+)
-        (advance))
+    (tagbody
+       (let ((state (http-state http)))
+         (declare (type fixnum state))
+         (cond
+           ((= +state-first-line+ state)
+            (go first-line))
+           ((= +state-headers+ state)
+            (go headers))
+           ((= +state-body+ state)
+            (go body))
+           ((= +state-chunk-size+ state)
+            (go body))))
 
-      (setf (http-mark http) p)
-      (callback-notify :message-begin http callbacks)
-
-      (multiple-value-bind (method next)
-          (parse-method data p end)
-        (declare (type pointer next))
-        (setf (http-method http) method)
-        (advance-to next))
-      (skip-while (= byte +space+))
-      (let ((next (parse-url http callbacks data p end)))
-        (declare (type pointer next))
-        (advance-to next))
-
-      (skip-while (= byte +space+))
-
-      (cond
-        ;; No HTTP version
-        ((= byte +cr+)
+     first-line
+       ;; skip first empty line (some clients add CRLF after POST content)
+       (when (= byte +cr+)
          (expect-byte +lf+)
          (advance))
-        (T (multiple-value-bind (major minor next)
-               (parse-http-version data p end)
-             (declare (type pointer next))
-             (setf (http-major-version http) major
-                   (http-minor-version http) minor)
-             (advance-to next))
 
-           (advance)
-           (expect-crlf)
-           (advance)))
+       (setf (http-mark http) p)
+       (callback-notify :message-begin http callbacks)
 
-      (setf (http-mark http) p)
-      (setf (http-state http) +state-headers+)
-      (callback-notify :first-line http callbacks))
+       (multiple-value-bind (method next)
+           (parse-method data p end)
+         (declare (type pointer next))
+         (setf (http-method http) method)
+         (advance-to next))
+       (skip-while (= byte +space+))
+       (let ((next (parse-url http callbacks data p end)))
+         (declare (type pointer next))
+         (advance-to next))
 
-    (when (= (http-state http) +state-headers+)
-      (setq p (parse-headers http callbacks data p end))
+       (skip-while (= byte +space+))
 
-      (callback-notify :headers-complete http callbacks)
-      (setf (http-header-read http) 0)
+       (cond
+         ;; No HTTP version
+         ((= byte +cr+)
+          (expect-byte +lf+)
+          (advance))
+         (T (multiple-value-bind (major minor next)
+                (parse-http-version data p end)
+              (declare (type pointer next))
+              (setf (http-major-version http) major
+                    (http-minor-version http) minor)
+              (advance-to next))
 
-      ;; Exit, the rest of the connect is in a different protocol.
-      (when (http-upgrade-p http)
-        (setf (http-state http) +state-first-line+)
-        (callback-notify :message-complete http callbacks)
-        (return-from parse-request p)))
+            (advance)
+            (expect-crlf)
+            (advance)))
 
-    (when (or (= (http-state http) +state-body+)
-              (= (http-state http) +state-chunk-size+))
-      (if (http-chunked-p http)
-          (progn
-            (setf (http-state http) +state-chunk-size+)
-            (parse-chunked-body http callbacks data p end))
-          (parse-body http callbacks data p end))
-      (setf (http-state http) +state-first-line+))))
+       (setf (http-mark http) p)
+       (setf (http-state http) +state-headers+)
+       (callback-notify :first-line http callbacks)
+
+     headers
+       (setq p (parse-headers http callbacks data p end))
+
+       (callback-notify :headers-complete http callbacks)
+       (setf (http-header-read http) 0)
+
+       ;; Exit, the rest of the connect is in a different protocol.
+       (when (http-upgrade-p http)
+         (setf (http-state http) +state-first-line+)
+         (callback-notify :message-complete http callbacks)
+         (return-from parse-request p))
+
+     body
+       (if (http-chunked-p http)
+           (progn
+             (setf (http-state http) +state-chunk-size+)
+             (parse-chunked-body http callbacks data p end))
+           (parse-body http callbacks data p end))
+       (setf (http-state http) +state-first-line+))))
 
 (defun-speedy parse-response (http callbacks data &key (start 0) end)
   (declare (type http http)
@@ -800,45 +818,57 @@ us a never-ending header that the application keeps buffering.")
     (setf (http-mark http) start)
     (check-eof)
 
-    (when (= (http-state http) +state-first-line+)
-      (callback-notify :message-begin http callbacks)
+    (tagbody
+       (let ((state (http-state http)))
+         (declare (type fixnum state))
+         (cond
+           ((= +state-first-line+ state)
+            (go first-line))
+           ((= +state-headers+ state)
+            (go headers))
+           ((= +state-body+ state)
+            (go body))
+           ((= +state-chunk-size+ state)
+            (go body))))
 
-      (multiple-value-bind (major minor next)
-          (parse-http-version data p end)
-        (declare (type pointer next))
-        (setf (http-major-version http) major
-              (http-minor-version http) minor)
-        (advance-to next))
+     first-line
+       (callback-notify :message-begin http callbacks)
 
-      (advance)
+       (multiple-value-bind (major minor next)
+           (parse-http-version data p end)
+         (declare (type pointer next))
+         (setf (http-major-version http) major
+               (http-minor-version http) minor)
+         (advance-to next))
 
-      (cond
-        ((= byte +space+)
-         (advance)
-         (advance-to (parse-status-code http callbacks data p end)))
-        ((= byte +cr+)
-         (expect-byte +lf+)
-         (advance))
-        (T (error 'invalid-version)))
+       (advance)
 
-      (setf (http-mark http) p)
-      (setf (http-state http) +state-headers+)
-      (callback-notify :first-line http callbacks))
+       (cond
+         ((= byte +space+)
+          (advance)
+          (advance-to (parse-status-code http callbacks data p end)))
+         ((= byte +cr+)
+          (expect-byte +lf+)
+          (advance))
+         (T (error 'invalid-version)))
 
-    (when (= (http-state http) +state-headers+)
-      (setq p (parse-headers http callbacks data p end))
+       (setf (http-mark http) p)
+       (setf (http-state http) +state-headers+)
+       (callback-notify :first-line http callbacks)
 
-      (callback-notify :headers-complete http callbacks)
-      (setf (http-header-read http) 0))
+     headers
+       (setq p (parse-headers http callbacks data p end))
 
-    (when (or (= (http-state http) +state-body+)
-              (= (http-state http) +state-chunk-size+))
-      (if (http-chunked-p http)
-          (progn
-            (setf (http-state http) +state-chunk-size+)
-            (parse-chunked-body http callbacks data p end))
-          (parse-body http callbacks data p end))
-      (setf (http-state http) +state-first-line+))))
+       (callback-notify :headers-complete http callbacks)
+       (setf (http-header-read http) 0)
+
+     body
+       (if (http-chunked-p http)
+           (progn
+             (setf (http-state http) +state-chunk-size+)
+             (parse-chunked-body http callbacks data p end))
+           (parse-body http callbacks data p end))
+       (setf (http-state http) +state-first-line+))))
 
 (defun-careful make-parser (http type &key first-line-callback header-callback body-callback finish-callback)
   (declare (type http http))
