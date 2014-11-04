@@ -666,6 +666,7 @@ us a never-ending header that the application keeps buffering.")
        (cond
          ((zerop (http-content-length http))
           ;; trailing
+          (callback-notify :message-complete http callbacks)
           (setf (http-state http) +state-headers+)
           (return-from parse-chunked-body
             (parse-headers http callbacks data p end)))
