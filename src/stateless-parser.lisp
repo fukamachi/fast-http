@@ -35,7 +35,6 @@
            :parse-response
 
            :eof
-           :eof-pointer
 
            :make-parser))
 (in-package :fast-http.stateless-parser)
@@ -90,6 +89,15 @@ us a never-ending header that the application keeps buffering.")
 
 
 ;;
+;; States
+
+(defconstant +state-first-line+ 0)
+(defconstant +state-headers+ 1)
+(defconstant +state-chunked-size+ 2)
+(defconstant +state-body+ 3)
+
+
+;;
 ;; Parser declaration
 
 (defstruct (ll-parser (:conc-name :parser-))
@@ -103,7 +111,8 @@ us a never-ending header that the application keeps buffering.")
 
   ;; private
   (header-read 0 :type fixnum)
-  (mark -1 :type fixnum))
+  (mark -1 :type fixnum)
+  (state +state-first-line+ :type fixnum))
 
 
 ;;
@@ -134,10 +143,7 @@ us a never-ending header that the application keeps buffering.")
 ;;
 ;; Parser utilities
 
-(define-condition eof ()
-  ((pointer :initarg :pointer
-            :initform nil
-            :reader eof-pointer)))
+(define-condition eof () ())
 
 (defmacro check-eof ()
   `(when (= p end)
@@ -569,7 +575,7 @@ us a never-ending header that the application keeps buffering.")
     (:last (return))))
 
 (defun-speedy parse-headers (parser callbacks data start end)
-  (declare (type parser parser)
+  (declare (type ll-parser parser)
            (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
@@ -587,10 +593,12 @@ us a never-ending header that the application keeps buffering.")
         (error 'header-overflow))
       (parse-header-line)
       (setf (parser-mark parser) p))
+    (setf (parser-mark parser) p)
+    (setf (parser-state parser) +state-body+)
     p))
 
 (defun-speedy read-body-data (parser callbacks data start end)
-  (declare (type parser parser)
+  (declare (type ll-parser parser)
            (type simple-byte-vector data)
            (type pointer start end))
   (let ((readable-count (the pointer (- end start))))
@@ -626,7 +634,7 @@ us a never-ending header that the application keeps buffering.")
     T))
 
 (defun-speedy parse-body (parser callbacks data start end)
-  (declare (type parser parser)
+  (declare (type ll-parser parser)
            (type simple-byte-vector data)
            (type pointer start end))
   (case (parser-content-length parser)
@@ -681,7 +689,7 @@ us a never-ending header that the application keeps buffering.")
                    (+ (* 16 (parser-content-length parser)) unhex-val)))))))))
 
 (defun-speedy parse-chunked-body (parser callbacks data start end)
-  (declare (type parser parser)
+  (declare (type ll-parser parser)
            (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
@@ -689,22 +697,27 @@ us a never-ending header that the application keeps buffering.")
     (declare (type pointer p)
              (type (unsigned-byte 8) byte))
 
-    (parse-chunked-size)
-    (setf (parser-mark parser) p)
+    (when (= (parser-state parser) +state-chunked-size+)
+      (parse-chunked-size)
+      (setf (parser-mark parser) p)
+      (setf (parser-state parser) +state-body+))
 
-    (cond
-      ((zerop (parser-content-length parser))
-       ;; trailing
-       (parse-headers parser callbacks data p end))
-      (T
-       (advance-to (read-body-data parser callbacks data p end))
-       (expect-crlf)
-       (advance)
-       (setf (parser-mark parser) p)
-       (parse-chunked-body parser callbacks data p end)))))
+    (when (= (parser-state parser) +state-body+)
+      (cond
+        ((zerop (parser-content-length parser))
+         ;; trailing
+         (setf (parser-state parser) +state-headers+)
+         (parse-headers parser callbacks data p end))
+        (T
+         (advance-to (read-body-data parser callbacks data p end))
+         (expect-crlf)
+         (advance)
+         (setf (parser-mark parser) p)
+         (setf (parser-state parser) +state-chunked-size+)
+         (parse-chunked-body parser callbacks data p end))))))
 
 (defun-speedy parse-request (parser callbacks data &key (start 0) end)
-  (declare (type parser parser)
+  (declare (type ll-parser parser)
            (type simple-byte-vector data))
   (let* ((p start)
          (byte (aref data p))
@@ -712,64 +725,72 @@ us a never-ending header that the application keeps buffering.")
     (declare (type (unsigned-byte 8) byte)
              (type pointer p end))
     (setf (parser-mark parser) start)
-
     (check-eof)
 
-    ;; skip first empty line (some clients add CRLF after POST content)
-    (when (= byte +cr+)
-      (expect-byte +lf+)
-      (advance))
+    (when (= (parser-state parser) +state-first-line+)
+      ;; skip first empty line (some clients add CRLF after POST content)
+      (when (= byte +cr+)
+        (expect-byte +lf+)
+        (advance))
 
-    (setf (parser-mark parser) p)
-    (callback-notify :message-begin parser callbacks)
+      (setf (parser-mark parser) p)
+      (callback-notify :message-begin parser callbacks)
 
-    (multiple-value-bind (method next)
-        (parse-method data p end)
-      (declare (type pointer next))
-      (setf (parser-method parser) method)
-      (advance-to next))
-    (skip-while (= byte +space+))
-    (let ((next (parse-url parser callbacks data p end)))
-      (declare (type pointer next))
-      (advance-to next))
+      (multiple-value-bind (method next)
+          (parse-method data p end)
+        (declare (type pointer next))
+        (setf (parser-method parser) method)
+        (advance-to next))
+      (skip-while (= byte +space+))
+      (let ((next (parse-url parser callbacks data p end)))
+        (declare (type pointer next))
+        (advance-to next))
 
-    (skip-while (= byte +space+))
+      (skip-while (= byte +space+))
 
-    (cond
-      ;; No HTTP version
-      ((= byte +cr+)
-       (expect-byte +lf+)
-       (advance))
-      (T (multiple-value-bind (major minor next)
-             (parse-http-version data p end)
-           (declare (type pointer next))
-           (setf (parser-http-major parser) major
-                 (parser-http-minor parser) minor)
-           (advance-to next))
+      (cond
+        ;; No HTTP version
+        ((= byte +cr+)
+         (expect-byte +lf+)
+         (advance))
+        (T (multiple-value-bind (major minor next)
+               (parse-http-version data p end)
+             (declare (type pointer next))
+             (setf (parser-http-major parser) major
+                   (parser-http-minor parser) minor)
+             (advance-to next))
 
-         (advance)
-         (expect-crlf)
-         (advance)))
+           (advance)
+           (expect-crlf)
+           (advance)))
 
-    (setf (parser-mark parser) p)
-    (callback-notify :first-line parser callbacks)
+      (setf (parser-mark parser) p)
+      (setf (parser-state parser) +state-headers+)
+      (callback-notify :first-line parser callbacks))
 
-    (setq p (parse-headers parser callbacks data p end))
+    (when (= (parser-state parser) +state-headers+)
+      (setq p (parse-headers parser callbacks data p end))
 
-    (callback-notify :headers-complete parser callbacks)
-    (setf (parser-header-read parser) 0)
+      (callback-notify :headers-complete parser callbacks)
+      (setf (parser-header-read parser) 0)
 
-    ;; Exit, the rest of the connect is in a different protocol.
-    (when (parser-upgrade-p parser)
-      (callback-notify :message-complete parser callbacks)
-      (return-from parse-request p))
+      ;; Exit, the rest of the connect is in a different protocol.
+      (when (parser-upgrade-p parser)
+        (setf (parser-state parser) +state-first-line+)
+        (callback-notify :message-complete parser callbacks)
+        (return-from parse-request p)))
 
-    (if (parser-chunked-p parser)
-        (parse-chunked-body parser callbacks data p end)
-        (parse-body parser callbacks data p end))))
+    (when (or (= (parser-state parser) +state-body+)
+              (= (parser-state parser) +state-chunked-size+))
+      (if (parser-chunked-p parser)
+          (progn
+            (setf (parser-state parser) +state-chunked-size+)
+            (parse-chunked-body parser callbacks data p end))
+          (parse-body parser callbacks data p end))
+      (setf (parser-state parser) +state-first-line+))))
 
 (defun-speedy parse-response (parser callbacks data &key (start 0) end)
-  (declare (type parser parser)
+  (declare (type ll-parser parser)
            (type simple-byte-vector data))
   (let* ((p start)
          (byte (aref data p))
@@ -777,37 +798,47 @@ us a never-ending header that the application keeps buffering.")
     (declare (type (unsigned-byte 8) byte)
              (type pointer p end))
     (setf (parser-mark parser) start)
-    (callback-notify :message-begin parser callbacks)
+    (check-eof)
 
-    (multiple-value-bind (major minor next)
-        (parse-http-version data p end)
-      (declare (type pointer next))
-      (setf (parser-http-major parser) major
-            (parser-http-minor parser) minor)
-      (advance-to next))
+    (when (= (parser-state parser) +state-first-line+)
+      (callback-notify :message-begin parser callbacks)
 
-    (advance)
+      (multiple-value-bind (major minor next)
+          (parse-http-version data p end)
+        (declare (type pointer next))
+        (setf (parser-http-major parser) major
+              (parser-http-minor parser) minor)
+        (advance-to next))
 
-    (cond
-      ((= byte +space+)
-       (advance)
-       (advance-to (parse-status-code parser callbacks data p end)))
-      ((= byte +cr+)
-       (expect-byte +lf+)
-       (advance))
-      (T (error 'invalid-version)))
+      (advance)
 
-    (setf (parser-mark parser) p)
-    (callback-notify :first-line parser callbacks)
+      (cond
+        ((= byte +space+)
+         (advance)
+         (advance-to (parse-status-code parser callbacks data p end)))
+        ((= byte +cr+)
+         (expect-byte +lf+)
+         (advance))
+        (T (error 'invalid-version)))
 
-    (setq p (parse-headers parser callbacks data p end))
+      (setf (parser-mark parser) p)
+      (setf (parser-state parser) +state-headers+)
+      (callback-notify :first-line parser callbacks))
 
-    (callback-notify :headers-complete parser callbacks)
-    (setf (parser-header-read parser) 0)
+    (when (= (parser-state parser) +state-headers+)
+      (setq p (parse-headers parser callbacks data p end))
 
-    (if (parser-chunked-p parser)
-        (parse-chunked-body parser callbacks data p end)
-        (parse-body parser callbacks data p end))))
+      (callback-notify :headers-complete parser callbacks)
+      (setf (parser-header-read parser) 0))
+
+    (when (or (= (parser-state parser) +state-body+)
+              (= (parser-state parser) +state-chunk-size+))
+      (if (parser-chunked-p parser)
+          (progn
+            (setf (parser-state parser) +state-chunked-size+)
+            (parse-chunked-body parser callbacks data p end))
+          (parse-body parser callbacks data p end))
+      (setf (parser-state parser) +state-first-line+))))
 
 (defun-careful make-parser (type &key first-line-callback header-callback body-callback finish-callback)
   (let ((ll-parser (make-ll-parser))
@@ -906,11 +937,10 @@ us a never-ending header that the application keeps buffering.")
              (setq data-buffer nil))
            (handler-case
                (funcall parse-fn ll-parser callbacks (the simple-byte-vector data) :start start :end end)
-             (eof (e)
-               ;; TODO: track state
+             (eof ()
                (setq data-buffer
                      (make-array (- (or end (length data))
-                                    (eof-pointer e))
+                                    (parser-mark ll-parser))
                                  :element-type '(unsigned-byte 8)
                                  :displaced-to data
-                                 :displaced-index-offset (eof-pointer e)))))))))))
+                                 :displaced-index-offset (parser-mark ll-parser)))))))))))
