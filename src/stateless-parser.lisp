@@ -271,14 +271,18 @@ us a never-ending header that the application keeps buffering.")
                         (#\Nul (error 'invalid-header-token))
                         ,@(loop for (char . candidates) in alist
                                 collect `(,char (advance) ,(build-case (1+ i) candidates)))
-                        (otherwise (return-from ,expect-block
-                                     (progn ,@(cdr (assoc 'otherwise clauses))))))
-                     `(return-from ,expect-block
-                        (if (= byte (char-code #\:))
-                            (progn ,@(cdr (assoc (intern (car strings) :keyword) clauses)))
-                            (progn ,@(cdr (assoc 'otherwise clauses)))))))))
+                        (otherwise (go otherwise)))
+                     `(if (= byte (char-code #\:))
+                          (return-from ,expect-block
+                            (progn ,@(cdr (assoc (intern (car strings) :keyword) clauses))))
+                          (go otherwise))))))
       `(block ,expect-block
-         ,(build-case 0 strings)))))
+         (tagbody
+            ,(build-case 0 strings)
+
+          otherwise
+            (return-from ,expect-block
+              (progn ,@(cdr (assoc 'otherwise clauses)))))))))
 
 
 ;;
