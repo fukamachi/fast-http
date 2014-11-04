@@ -128,6 +128,14 @@
              (setq header-value-collector (make-collector))))
       (setq callbacks
             (make-callbacks
+             :url (lambda (http data start end)
+                    (declare (type simple-byte-vector data))
+                    (setf (http-resource http)
+                          (babel:octets-to-string data :start start :end end)))
+             :status (lambda (http data start end)
+                       (declare (type simple-byte-vector data))
+                       (setf (http-status-text http)
+                             (babel:octets-to-string data :start start :end end)))
              :first-line (and first-line-callback
                               (lambda (http)
                                 (declare (ignore http))
