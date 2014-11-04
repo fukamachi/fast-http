@@ -12,7 +12,6 @@
                 :ll-callbacks-message-complete
                 :parser-state)
   (:import-from :fast-http.util
-                :check-strictly
                 :tagcasev
                 :casev)
   (:import-from :babel
