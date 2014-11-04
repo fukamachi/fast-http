@@ -100,7 +100,8 @@ us a never-ending header that the application keeps buffering.")
   (upgrade-p nil :type boolean)
 
   ;; private
-  (header-read 0 :type fixnum))
+  (header-read 0 :type fixnum)
+  (mark -1 :type fixnum))
 
 
 ;;
@@ -578,10 +579,12 @@ us a never-ending header that the application keeps buffering.")
       (expect-byte +lf+)
       (return-from parse-headers (1+ p)))
     (parse-header-field-and-value)
+    (setf (parser-mark parser) p)
     (loop
       (when (= +max-header-line+ (incf (parser-header-read parser)))
         (error 'header-overflow))
-      (parse-header-line))
+      (parse-header-line)
+      (setf (parser-mark parser) p))
     p))
 
 (defun-speedy read-body-data (parser callbacks data start end)
@@ -601,7 +604,7 @@ us a never-ending header that the application keeps buffering.")
         (progn
           (decf (parser-content-length parser) readable-count)
           (callback-data :body parser callbacks data start end)
-          (error 'eof :pointer end)))))
+          end))))
 
 (defun-speedy http-message-needs-eof-p (parser)
   (let ((status-code (parser-status-code parser)))
@@ -685,6 +688,7 @@ us a never-ending header that the application keeps buffering.")
              (type (unsigned-byte 8) byte))
 
     (parse-chunked-size)
+    (setf (parser-mark parser) p)
 
     (cond
       ((zerop (parser-content-length parser))
@@ -694,6 +698,7 @@ us a never-ending header that the application keeps buffering.")
        (advance-to (read-body-data parser callbacks data p end))
        (expect-crlf)
        (advance)
+       (setf (parser-mark parser) p)
        (parse-chunked-body parser callbacks data p end)))))
 
 (defun-speedy parse-request (parser callbacks data &key (start 0) end)
@@ -704,6 +709,7 @@ us a never-ending header that the application keeps buffering.")
          (end (or end (length data))))
     (declare (type (unsigned-byte 8) byte)
              (type pointer p end))
+    (setf (parser-mark parser) start)
 
     (check-eof)
 
@@ -712,6 +718,7 @@ us a never-ending header that the application keeps buffering.")
       (expect-byte +lf+)
       (advance))
 
+    (setf (parser-mark parser) p)
     (callback-notify :message-begin parser callbacks)
 
     (multiple-value-bind (method next)
@@ -742,6 +749,7 @@ us a never-ending header that the application keeps buffering.")
          (expect-crlf)
          (advance)))
 
+    (setf (parser-mark parser) p)
     (callback-notify :first-line parser callbacks)
 
     (setq p (parse-headers parser callbacks data p end))
