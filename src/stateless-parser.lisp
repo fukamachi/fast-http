@@ -774,6 +774,8 @@ us a never-ending header that the application keeps buffering.")
          (end (or end (length data))))
     (declare (type (unsigned-byte 8) byte)
              (type pointer p end))
+    (setf (parser-mark parser) start)
+    (callback-notify :message-begin parser callbacks)
 
     (multiple-value-bind (major minor next)
         (parse-http-version data p end)
@@ -793,9 +795,12 @@ us a never-ending header that the application keeps buffering.")
        (advance))
       (T (error 'invalid-version)))
 
+    (setf (parser-mark parser) p)
     (callback-notify :first-line parser callbacks)
 
     (setq p (parse-headers parser callbacks data p end))
+
+    (callback-notify :headers-complete parser callbacks)
     (setf (parser-header-read parser) 0)
 
     (if (parser-chunked-p parser)
