@@ -593,7 +593,7 @@ us a never-ending header that the application keeps buffering.")
     (parse-header-field-and-value)
     (setf (http-mark http) p)
     (loop
-      (when (= +max-header-line+ (incf (http-header-read http)))
+      (when (= +max-header-line+ (the fixnum (incf (http-header-read http))))
         (error 'header-overflow))
       (parse-header-line)
       (setf (http-mark http) p))
