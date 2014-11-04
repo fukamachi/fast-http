@@ -10,17 +10,20 @@
                 :simple-byte-vector
                 :alpha-byte-char-p
                 :digit-byte-char-p
-                :digit-byte-char-to-integer)
+                :digit-byte-char-to-integer
+                :ascii-octets-to-lower-string)
   (:import-from :fast-http.util
                 :casev=
-                :case-byte)
+                :case-byte
+                :make-collector
+                :number-string-p)
   (:import-from :alexandria
                 :with-gensyms
                 :hash-table-alist
                 :define-constant
                 :when-let)
-  (:export :make-parser
-           :make-callbacks
+  (:export :make-ll-parser
+           :make-ll-callbacks
            :parser-type
            :parser-method
            :parser-status-code
@@ -34,7 +37,9 @@
            :http-parse
 
            :eof
-           :eof-pointer))
+           :eof-pointer
+
+           :make-parser))
 (in-package :fast-http.stateless-parser)
 
 ;;
@@ -89,7 +94,7 @@ us a never-ending header that the application keeps buffering.")
 ;;
 ;; Parser declaration
 
-(defstruct parser
+(defstruct (ll-parser (:conc-name :parser-))
   (type :both :type keyword)
   (method nil :type symbol)
   (http-major 0 :type fixnum)
@@ -107,7 +112,7 @@ us a never-ending header that the application keeps buffering.")
 ;;
 ;; Callbacks
 
-(defstruct callbacks
+(defstruct ll-callbacks
   (message-begin nil :type (or null function))     ;; 1 arg
   (url nil :type (or null function))
   (first-line nil :type (or null function))
@@ -120,12 +125,12 @@ us a never-ending header that the application keeps buffering.")
 
 (defmacro callback-data (name parser callbacks data start end)
   (with-gensyms (callback)
-    `(when-let (,callback (,(intern (format nil "~A-~A" :callbacks name)) ,callbacks))
+    `(when-let (,callback (,(intern (format nil "~A-~A" :ll-callbacks name)) ,callbacks))
        (funcall ,callback ,parser ,data ,start ,end))))
 
 (defmacro callback-notify (name parser callbacks)
   (with-gensyms (callback)
-    `(when-let (,callback (,(intern (format nil "~A-~A" :callbacks name)) ,callbacks))
+    `(when-let (,callback (,(intern (format nil "~A-~A" :ll-callbacks name)) ,callbacks))
        (funcall ,callback ,parser))))
 
 
@@ -842,3 +847,109 @@ us a never-ending header that the application keeps buffering.")
         (otherwise
          (setf (parser-type parser) :request)
          (parse-request parser callbacks data :start start :end end))))))
+
+(defun-careful make-parser (type &key first-line-callback header-callback body-callback finish-callback)
+  (let ((ll-parser (make-ll-parser :type type))
+        callbacks
+
+        (parse-fn (ecase type
+                    (:request #'parse-request)
+                    (:response #'parse-response)))
+
+        (headers (make-hash-table :test 'equal))
+
+        (header-value-collector (make-collector))
+        parsing-header-field
+        data-buffer
+
+        completedp)
+    (declare (type function header-value-collector))
+    (flet ((collect-prev-header-value ()
+             (let ((header-values (funcall header-value-collector)))
+               (unless header-values
+                 (return-from collect-prev-header-value))
+               (let* ((len (reduce #'+ header-values :key #'length))
+                      (header-value (make-string len)))
+                 (loop with current-pos = 0
+                       for val of-type (array (unsigned-byte 8) (*)) in header-values
+                       do (loop for byte of-type (unsigned-byte 8) across val
+                                do (setf (aref header-value current-pos) (code-char byte))
+                                   (incf current-pos)))
+                 (multiple-value-bind (previous-value existp)
+                     (gethash (the simple-string parsing-header-field) headers)
+                   (setf (gethash (the simple-string parsing-header-field) headers)
+                         (if existp
+                             (concatenate 'string (the simple-string previous-value) ", " header-value)
+                             (if (number-string-p header-value)
+                                 (read-from-string header-value)
+                                 header-value))))))
+             (setq header-value-collector (make-collector))))
+      (setq callbacks
+            (make-ll-callbacks
+             :first-line (and first-line-callback
+                              (lambda (parser)
+                                (declare (ignore parser))
+                                (funcall (the function first-line-callback))))
+             :header-field (lambda (parser data start end)
+                             (declare (ignore parser)
+                                      (type simple-byte-vector data)
+                                      (type pointer start end))
+                             (collect-prev-header-value)
+                             (setq parsing-header-field
+                                   (ascii-octets-to-lower-string data :start start :end end)))
+             :header-value (lambda (parser data start end)
+                             (declare (ignore parser)
+                                      (type simple-byte-vector data)
+                                      (type pointer start end))
+                             (funcall header-value-collector
+                                      (make-array (- end start)
+                                                  :element-type '(unsigned-byte 8)
+                                                  :displaced-to data
+                                                  :displaced-index-offset start)))
+             :headers-complete (lambda (parser)
+                                 (declare (ignore parser))
+                                 (collect-prev-header-value)
+                                 (when header-callback
+                                   (funcall (the function header-callback) headers)))
+             :body (and body-callback
+                        (lambda (parser data start end)
+                          (declare (ignore parser)
+                                   (type simple-byte-vector data)
+                                   (type pointer start end))
+                          (funcall (the function body-callback)
+                                   (make-array (- end start)
+                                               :element-type '(unsigned-byte 8)
+                                               :displaced-to data
+                                               :displaced-index-offset start))))
+             :message-complete (lambda (parser)
+                                 (declare (ignore parser))
+                                 (collect-prev-header-value)
+                                 (when finish-callback
+                                   (funcall (the function finish-callback)))
+                                 (setq completedp t)))))
+
+    (lambda (data &key (start 0) end)
+      (declare (optimize (speed 3) (safety 2)))
+      (cond
+        ((eql data :eof)
+         (setq completedp t)
+         (when finish-callback
+           (funcall (the function finish-callback))))
+        (T
+         (locally (declare (type simple-byte-vector data)
+                           (type pointer start))
+           (check-type end (or null pointer))
+           (when data-buffer
+             ;; XXX: make this efficient
+             (setq data (concatenate 'simple-byte-vector data-buffer data))
+             (setq data-buffer nil))
+           (handler-case
+               (funcall parse-fn ll-parser callbacks (the simple-byte-vector data) :start start :end end)
+             (eof (e)
+               ;; TODO: track state
+               (setq data-buffer
+                     (make-array (- (or end (length data))
+                                    (eof-pointer e))
+                                 :element-type '(unsigned-byte 8)
+                                 :displaced-to data
+                                 :displaced-index-offset (eof-pointer e)))))))))))
