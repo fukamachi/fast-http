@@ -137,22 +137,6 @@ us a never-ending header that the application keeps buffering.")
   `(when (= p end)
      (error 'eof)))
 
-(defmacro with-transaction ((&key var) &body body)
-  (with-gensyms (start e)
-    (flet ((main-part ()
-             `(handler-case (progn ,@body)
-                (eof (,e)
-                  (if (eof-pointer ,e)
-                      (error ,e)
-                      (error 'eof :pointer ,(or var start)))))))
-      (if var
-          `(progn
-             (setq ,var p)
-             ,(main-part))
-          `(let ((,start p))
-             (declare (dynamic-extent ,start))
-             ,(main-part))))))
-
 (defmacro advance (&optional (degree 1))
   `(progn
      (incf p ,degree)
@@ -326,61 +310,59 @@ us a never-ending header that the application keeps buffering.")
 ;;
 ;; Main
 
-(defun-insane parse-method (data start end)
+(defun-speedy parse-method (data start end)
   (declare (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
          (byte (aref data p)))
     (declare (type (unsigned-byte 8) byte)
              (type pointer p))
-    (with-transaction (:var start)
-      (values
-       (prog1 (expect-one-of
-                  (:CONNECT
-                   :COPY
-                   :CHECKOUT
-                   :DELETE
-                   :GET
-                   :HEAD
-                   :LOCK
-                   :MKCOL
-                   :MKCALENDAR
-                   :MKACTIVITY
-                   :MOVE
-                   :MERGE
-                   :M-SEARCH
-                   :NOTIFY
-                   :OPTIONS
-                   :POST
-                   :PROPFIND
-                   :PROPPATCH
-                   :PUT
-                   :PURGE
-                   :PATCH
-                   :REPORT
-                   :SEARCH
-                   :SUBSCRIBE
-                   :TRACE
-                   :UNLOCK
-                   :UNSUBSCRIBE)
-                  'invalid-method)
-         (expect-byte +space+ 'invalid-method))
-       p))))
+    (values
+     (prog1 (expect-one-of
+                (:CONNECT
+                 :COPY
+                 :CHECKOUT
+                 :DELETE
+                 :GET
+                 :HEAD
+                 :LOCK
+                 :MKCOL
+                 :MKCALENDAR
+                 :MKACTIVITY
+                 :MOVE
+                 :MERGE
+                 :M-SEARCH
+                 :NOTIFY
+                 :OPTIONS
+                 :POST
+                 :PROPFIND
+                 :PROPPATCH
+                 :PUT
+                 :PURGE
+                 :PATCH
+                 :REPORT
+                 :SEARCH
+                 :SUBSCRIBE
+                 :TRACE
+                 :UNLOCK
+                 :UNSUBSCRIBE)
+                'invalid-method)
+       (expect-byte +space+ 'invalid-method))
+     p)))
 
-(defun-insane parse-url (parser callbacks data start end)
+(defun-speedy parse-url (parser callbacks data start end)
   (declare (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
          (byte (aref data p)))
     (declare (type (unsigned-byte 8) byte)
              (type pointer p))
-    (with-transaction (:var start)
-      (skip-while (or (<= (char-code #\!) byte (char-code #\~))
-                      (<= 128 byte)))
-      (callback-data :url parser callbacks data start p))
+    (skip-while (or (<= (char-code #\!) byte (char-code #\~))
+                    (<= 128 byte)))
+    (callback-data :url parser callbacks data start p)
     p))
 
-(defun-insane parse-http-version (data start end)
+(defun-speedy parse-http-version (data start end)
   (declare (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
@@ -388,19 +370,18 @@ us a never-ending header that the application keeps buffering.")
          major minor)
     (declare (type (unsigned-byte 8) byte)
              (type pointer p end))
-    (with-transaction (:var start)
-      (expect-string "HTTP/" 'expect-failed nil)
-      ;; Expect the HTTP major is only once digit.
-      (expect (digit-byte-char-p byte))
-      (setq major (digit-byte-char-to-integer byte))
-      (expect-byte (char-code #\.))
-      ;; Expect the HTTP minor is only once digit.
-      (expect (digit-byte-char-p byte))
-      (setq minor (digit-byte-char-to-integer byte)))
+    (expect-string "HTTP/" 'expect-failed nil)
+    ;; Expect the HTTP major is only once digit.
+    (expect (digit-byte-char-p byte))
+    (setq major (digit-byte-char-to-integer byte))
+    (expect-byte (char-code #\.))
+    ;; Expect the HTTP minor is only once digit.
+    (expect (digit-byte-char-p byte))
+    (setq minor (digit-byte-char-to-integer byte))
 
     (values major minor p)))
 
-(defun-insane parse-status-code (parser callbacks data start end)
+(defun-speedy parse-status-code (parser callbacks data start end)
   (declare (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
@@ -410,30 +391,29 @@ us a never-ending header that the application keeps buffering.")
     (unless (digit-byte-char-p byte)
       (error 'invalid-status))
     (setf (parser-status-code parser) (digit-byte-char-to-integer byte))
-    (with-transaction (:var start)
-      (loop
-        (advance)
-        (cond
-          ((digit-byte-char-p byte)
-           (setf (parser-status-code parser)
-                 (+ (the fixnum (* 10 (parser-status-code parser)))
-                    (digit-byte-char-to-integer byte)))
-           (when (< 999 (parser-status-code parser))
-             (error 'invalid-status :status-code (parser-status-code parser))))
-          ((= byte +space+)
-           ;; Reading the status text
-           (skip-while (= byte +space+))
-           (let ((status-text-start p))
-             (skip-until-crlf)
-             (callback-data :status parser callbacks data status-text-start (- p 1)))
-           (advance)
-           (return))
-          ((= byte +cr+)
-           ;; No status text
-           (expect-byte +lf+)
-           (advance)
-           (return))
-          (T (error 'invalid-status)))))
+    (loop
+      (advance)
+      (cond
+        ((digit-byte-char-p byte)
+         (setf (parser-status-code parser)
+               (+ (the fixnum (* 10 (parser-status-code parser)))
+                  (digit-byte-char-to-integer byte)))
+         (when (< 999 (parser-status-code parser))
+           (error 'invalid-status :status-code (parser-status-code parser))))
+        ((= byte +space+)
+         ;; Reading the status text
+         (skip-while (= byte +space+))
+         (let ((status-text-start p))
+           (skip-until-crlf)
+           (callback-data :status parser callbacks data status-text-start (- p 1)))
+         (advance)
+         (return))
+        ((= byte +cr+)
+         ;; No status text
+         (expect-byte +lf+)
+         (advance)
+         (return))
+        (T (error 'invalid-status))))
     p))
 
 (defmacro parse-header-field-and-value ()
@@ -594,13 +574,11 @@ us a never-ending header that the application keeps buffering.")
     (when (= byte +cr+)
       (expect-byte +lf+)
       (return-from parse-headers (1+ p)))
-    (with-transaction (:var start)
-      (parse-header-field-and-value))
+    (parse-header-field-and-value)
     (loop
       (when (= +max-header-line+ (incf (parser-header-read parser)))
         (error 'header-overflow))
-      (with-transaction (:var start)
-        (parse-header-line)))
+      (parse-header-line))
     p))
 
 (defun-speedy read-body-data (parser callbacks data start end)
@@ -703,8 +681,7 @@ us a never-ending header that the application keeps buffering.")
     (declare (type pointer p)
              (type (unsigned-byte 8) byte))
 
-    (with-transaction (:var start)
-      (parse-chunked-size))
+    (parse-chunked-size)
 
     (cond
       ((zerop (parser-content-length parser))
