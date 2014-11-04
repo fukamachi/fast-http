@@ -3,7 +3,6 @@
   (:use :cl
         :fast-http.http
         :fast-http.parser
-        :fast-http.unparser
         :fast-http.body-buffer
         :fast-http.byte-vector
         :fast-http.error
@@ -29,9 +28,6 @@
            ;; Low-level parser API
            :parse-request
            :parse-response
-
-           ;; unparser
-           :http-unparse
 
            ;; body-buffer
            :*default-memory-limit*
