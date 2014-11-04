@@ -130,14 +130,26 @@ us a never-ending header that the application keeps buffering.")
   (message-complete nil :type (or null function)))
 
 (defmacro callback-data (name http callbacks data start end)
-  (with-gensyms (callback)
+  (with-gensyms (callback e)
     `(when-let (,callback (,(intern (format nil "~A-~A" :callbacks name)) ,callbacks))
-       (funcall ,callback ,http ,data ,start ,end))))
+       (handler-bind ((error
+                        (lambda (,e)
+                          (unless (typep ,e 'fast-http-error)
+                            (error ',(intern (format nil "~A-~A" :cb name))
+                                   :error ,e)
+                            (abort ,e)))))
+         (funcall ,callback ,http ,data ,start ,end)))))
 
 (defmacro callback-notify (name http callbacks)
-  (with-gensyms (callback)
+  (with-gensyms (callback e)
     `(when-let (,callback (,(intern (format nil "~A-~A" :callbacks name)) ,callbacks))
-       (funcall ,callback ,http))))
+       (handler-bind ((error
+                        (lambda (,e)
+                          (unless (typep ,e 'fast-http-error)
+                            (error ',(intern (format nil "~A-~A" :cb name))
+                                   :error ,e)
+                            (abort ,e)))))
+         (funcall ,callback ,http)))))
 
 
 ;;
