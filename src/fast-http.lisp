@@ -14,18 +14,27 @@
   (:import-from :babel
                 :octets-to-string)
   (:export :make-parser
-           :http
-           :make-http
+           :http-request
+           :http-response
+           :make-http-request
+           :make-http-response
+           :http-request-p
+           :http-response-p
            :make-callbacks
            :http-major-version
            :http-minor-version
            :http-method
-           :http-status-code
+           :http-resource
+           :http-status
+           :http-status-text
            :http-content-length
            :http-chunked-p
            :http-upgrade-p
 
            ;; Low-level parser API
+           :http
+           :http-p
+           :make-http
            :parse-request
            :parse-response
 
@@ -81,13 +90,13 @@
            :invalid-parameter-value))
 (in-package :fast-http)
 
-(defun-careful make-parser (http type &key first-line-callback header-callback body-callback finish-callback)
+(defun-careful make-parser (http &key first-line-callback header-callback body-callback finish-callback)
   (declare (type http http))
   (let (callbacks
 
-        (parse-fn (ecase type
-                    (:request #'parse-request)
-                    (:response #'parse-response)))
+        (parse-fn (etypecase http
+                    (http-request #'parse-request)
+                    (http-response #'parse-response)))
 
         (headers (make-hash-table :test 'equal))
 

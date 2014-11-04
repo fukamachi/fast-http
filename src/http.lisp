@@ -2,16 +2,25 @@
 (defpackage fast-http.http
   (:use :cl)
   (:export :http
+           :http-request
+           :http-response
            :make-http
+           :make-http-request
+           :make-http-response
            :http-p
+           :http-request-p
+           :http-response-p
 
            :http-major-version
            :http-minor-version
            :http-method
-           :http-status-code
+           :http-status
            :http-content-length
            :http-chunked-p
            :http-upgrade-p
+
+           :http-resource
+           :http-status-text
 
            :http-header-read
            :http-mark
@@ -44,7 +53,7 @@
   (method nil :type symbol)
   (major-version 0 :type fixnum)
   (minor-version 9 :type fixnum)
-  (status-code 0 :type status-code)
+  (status 0 :type status-code)
   (content-length nil :type (or null integer))
   (chunked-p nil :type boolean)
   (upgrade-p nil :type boolean)
@@ -53,3 +62,11 @@
   (header-read 0 :type fixnum)
   (mark -1 :type fixnum)
   (state +state-first-line+ :type fixnum))
+
+(defstruct (http-request (:include http)
+                         (:conc-name :http-))
+  resource)
+
+(defstruct (http-response (:include http)
+                          (:conc-name :http-))
+  status-text)
