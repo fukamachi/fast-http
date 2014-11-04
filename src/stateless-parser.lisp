@@ -326,7 +326,7 @@ us a never-ending header that the application keeps buffering.")
 ;;
 ;; Main
 
-(defun-speedy parse-method (data start end)
+(defun-insane parse-method (data start end)
   (declare (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
@@ -366,7 +366,7 @@ us a never-ending header that the application keeps buffering.")
        (expect-byte +space+ 'invalid-method))
      p)))
 
-(defun-speedy parse-url (http callbacks data start end)
+(defun-insane parse-url (http callbacks data start end)
   (declare (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
@@ -378,7 +378,7 @@ us a never-ending header that the application keeps buffering.")
     (callback-data :url http callbacks data start p)
     p))
 
-(defun-speedy parse-http-version (data start end)
+(defun-insane parse-http-version (data start end)
   (declare (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
@@ -397,7 +397,7 @@ us a never-ending header that the application keeps buffering.")
 
     (values major minor p)))
 
-(defun-speedy parse-status-code (http callbacks data start end)
+(defun-insane parse-status-code (http callbacks data start end)
   (declare (type simple-byte-vector data)
            (type pointer start end))
   (let* ((p start)
