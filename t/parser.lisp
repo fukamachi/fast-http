@@ -1,7 +1,9 @@
 (in-package :cl-user)
 (defpackage fast-http-test.parser
   (:use :cl
+        :fast-http.http
         :fast-http.parser
+        :fast-http.error
         :fast-http-test.test-utils
         :prove
         :babel))
@@ -48,9 +50,9 @@
                      (setq url (babel:octets-to-string data :start start :end end))))
              (bv (apply #'concatenate 'string objects)))
     (list :method (http-method http)
-          :status-code (if (eql (http-status-code http) 0)
+          :status-code (if (eql (http-status http) 0)
                            nil
-                           (http-status-code http))
+                           (http-status http))
           :http-major (http-major-version http)
           :http-minor (http-minor-version http)
           :url url
