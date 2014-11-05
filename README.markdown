@@ -1,15 +1,12 @@
 # fast-http
 
-This is a fast HTTP request/response protocol parser for Common Lisp. Most parts were ported from C [http-parser](https://github.com/joyent/http-parser).
+This is a fast HTTP request/response protocol parser for Common Lisp.
 
 ## How fast?
 
 ![Parsing an HTTP request header 100000 times.](images/benchmark.png)
 
 - [http-parser](https://github.com/joyent/http-parser): An HTTP Parser for [Node.js](http://github.com/joyent/node)
-
-
-NOTE: Deleted [PicoHTTPParser](https://github.com/h2o/picohttpparser) because the benchmark was wrong. It's **3.7 times faster** than fast-http. Amazing.
 
 NOTE: @y2q-actionman pointed out Node.js's [http-parser](https://github.com/joyent/http-parser) is designed to use less memory. fast-http consumes more memory spaces than http-parser. (See [#8](https://github.com/fukamachi/fast-http/issues/8))
 
@@ -41,7 +38,9 @@ The API is quite similar to [http-parse](https://github.com/orthecreedence/http-
 * `http` doesn't have `:store-body` option because it can consume much memory.
 * `body-callback` for `make-parser` and `make-multipart-parser` doesn't take a flag `body-complete-p`.
   * Use `finish-callback` to know if the parsing is finished.
-* `:multipart-callback` of `make-parser` and `:callback` of `make-multipart-parser` takes a stream, not a body octet vector at the 4th argument.
+* `multipart-callback` for `make-parser` has deleted.
+  * Use `make-multipart-parser` and `body-callback` by yourself.
+* `:callback` of `make-multipart-parser` takes a stream, not a body octet vector at the 4th argument.
 * Raises errors aggressively while parsing.
   * Handle `fast-http-error` as you needed.
 * Doesn't use a property list as a representation of HTTP headers. (See [issue #1](https://github.com/fukamachi/fast-http/issues/1))
@@ -70,11 +69,11 @@ $ git clone https://github.com/fukamachi/fast-http
 
 - Parsing an HTTP request header 100000 times.
 
-In this benchmark, fast-http is **2 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
+In this benchmark, fast-http is **6.4 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
 
 | http-parser (C) | fast-http |
 | ---------------:| ---------:|
-|      0.289s     |   0.138s  |
+|      0.289s     |   0.045s  |
 
 ### Environment
 
@@ -88,22 +87,22 @@ In this benchmark, fast-http is **2 times faster** than [http-parser](https://gi
 (syntax:use-syntax :interpol)
 
 (defun run-benchmark ()
-  (let ((parser (make-ll-parser))
-        (callbacks (make-parser-callbacks))
+  (let ((http (make-http-request))
+        (callbacks (make-callbacks))
         (data (babel:string-to-octets #?"GET /cookies HTTP/1.1\r\nHost: 127.0.0.1:8090\r\nConnection: keep-alive\r\nCache-Control: max-age=0\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\nUser-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.56 Safari/537.17\r\nAccept-Encoding: gzip,deflate,sdch\r\nAccept-Language: en-US,en;q=0.8\r\nAccept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3\r\nCookie: name=wookie\r\n\r\n")))
     (time
      (loop repeat 100000 do
-       (http-parse parser callbacks data)))))
+       (parse-request http callbacks data)))))
 
 (run-benchmark)
 ```
 
 ```
 Evaluation took:
-  0.138 seconds of real time
-  0.138351 seconds of total run time (0.137894 user, 0.000457 system)
+  0.045 seconds of real time
+  0.045009 seconds of total run time (0.044898 user, 0.000111 system)
   100.00% CPU
-  414,180,401 processor cycles
+  134,443,059 processor cycles
   0 bytes consed
 ```
 
