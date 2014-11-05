@@ -12,7 +12,7 @@
 (defsystem fast-http
   :name "Fast HTTP Parser"
   :description "A fast HTTP protocol parser in Common Lisp"
-  :version "0.1"
+  :version "0.2.0"
   :author "Eitaro Fukamachi"
   :license "MIT"
   :depends-on (:alexandria
