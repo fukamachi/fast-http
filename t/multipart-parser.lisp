@@ -21,7 +21,7 @@
         results
         headers)
     (http-multipart-parse parser
-                          (make-ll-callbacks
+                          (make-callbacks
                            :header-field (lambda (parser data start end)
                                            (declare (ignore parser))
                                            (push (cons (babel:octets-to-string data :start start :end end)
@@ -125,7 +125,7 @@
                 "multiline header value")
 
 (let ((parser (make-ll-multipart-parser :boundary "AaB03x"))
-      (callbacks (make-ll-callbacks
+      (callbacks (make-callbacks
                   :body (lambda (parser data start end)
                           (declare (ignore parser))
                           (princ (babel:octets-to-string data :start start :end end))))))
@@ -139,7 +139,7 @@
     (is-print (parse (bv #?"--AaB03x\r\n")) "")))
 
 (let ((parser (make-ll-multipart-parser :boundary "AaB03x"))
-      (callbacks (make-ll-callbacks
+      (callbacks (make-callbacks
                   :body (lambda (parser data start end)
                           (declare (ignore parser))
                           (princ (babel:octets-to-string data :start start :end end))))))
@@ -155,7 +155,7 @@
               #?"")))
 
 (let ((parser (make-ll-multipart-parser :boundary "AaB03x"))
-      (callbacks (make-ll-callbacks
+      (callbacks (make-callbacks
                   :body (lambda (parser data start end)
                           (declare (ignore parser))
                           (princ (babel:octets-to-string data :start start :end end))))))
@@ -171,7 +171,7 @@
               #?"\r\n--AaBbCc")))
 
 (let ((parser (make-ll-multipart-parser :boundary "AaB03x"))
-      (callbacks (make-ll-callbacks
+      (callbacks (make-callbacks
                   :body (lambda (parser data start end)
                           (declare (ignore parser))
                           (princ (babel:octets-to-string data :start start :end end))))))

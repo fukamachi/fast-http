@@ -1,16 +1,20 @@
 (in-package :cl-user)
 (defpackage fast-http.multipart-parser
   (:use :cl
-        :fast-http.parser
         :fast-http.byte-vector
-        :fast-http.variables
         :fast-http.error)
   (:import-from :fast-http.parser
-                :ll-callbacks-body
-                :ll-callbacks-headers-complete
-                :ll-callbacks-message-begin
-                :ll-callbacks-message-complete
-                :parser-state)
+                :callbacks-body
+                :callbacks-headers-complete
+                :callbacks-message-begin
+                :callbacks-message-complete
+                :make-callbacks
+                :parse-headers)
+  (:import-from :fast-http.http
+                :http-state
+                :make-http
+                :+state-headers+
+                :+state-body+)
   (:import-from :fast-http.util
                 :tagcasev
                 :casev)
@@ -27,8 +31,8 @@
 (defstruct (ll-multipart-parser (:constructor make-ll-multipart-parser
                                   (&key boundary
                                    &aux (header-parser
-                                         (let ((parser (make-ll-parser :type :both)))
-                                           (setf (parser-state parser) +state-header-field-start+)
+                                         (let ((parser (make-http)))
+                                           (setf (http-state parser) +state-headers+)
                                            parser)))))
   (state 0 :type fixnum)
   (header-parser)
@@ -67,7 +71,7 @@
       (return-from http-multipart-parse start))
 
     (macrolet ((with-body-cb (callback &body body)
-                 `(handler-case (when-let (,callback (ll-callbacks-body callbacks))
+                 `(handler-case (when-let (,callback (callbacks-body callbacks))
                                   ,@body)
                     (error (e)
                       (error 'cb-body :error e))))
@@ -183,14 +187,14 @@
                   ;; got a part
                   (when (ll-multipart-parser-boundary-mark parser)
                     (call-body-cb))
-                  (when-let (callback (ll-callbacks-message-complete callbacks))
+                  (when-let (callback (callbacks-message-complete callbacks))
                     (handler-case (funcall callback parser)
                       (error (e)
                         (error 'cb-message-complete :error e)))))
                 (go-state +parsing-delimiter-done+))
 
                (+parsing-delimiter-done+
-                (when-let (callback (ll-callbacks-message-begin callbacks))
+                (when-let (callback (callbacks-message-begin callbacks))
                   (handler-case (funcall callback parser)
                     (error (e)
                       (error 'cb-message-begin :error e))))
@@ -198,15 +202,15 @@
                 (go-state +header-field-start+ 0))
 
                (+header-field-start+
-                (let ((next (http-parse-headers header-parser callbacks data :start p :end end)))
-                  (setq p next)
+                (let ((next (parse-headers header-parser callbacks data p end)))
+                  (setq p (1- next)) ;; XXX
                   ;; parsing headers done
-                  (when (= (parser-state header-parser) +state-headers-almost-done+)
-                    (when-let (callback (ll-callbacks-headers-complete callbacks))
+                  (when (= (http-state header-parser) +state-body+)
+                    (when-let (callback (callbacks-headers-complete callbacks))
                       (handler-case (funcall callback parser)
                         (error (e)
                           (error 'cb-headers-complete :error e))))
-                    (setf (parser-state header-parser) +state-header-field-start+))
+                    (setf (http-state header-parser) +state-headers+))
                   (go-state +body-start+ 0)))
 
                (+body-start+
@@ -249,7 +253,7 @@
                   ;; got a part
                   (setf (ll-multipart-parser-body-buffer parser) nil)
                   (call-body-cb)
-                  (when-let (callback (ll-callbacks-message-complete callbacks))
+                  (when-let (callback (callbacks-message-complete callbacks))
                     (handler-case (funcall callback parser)
                       (error (e)
                         (error 'cb-message-complete :error e))))

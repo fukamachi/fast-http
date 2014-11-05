@@ -827,3 +827,132 @@ us a never-ending header that the application keeps buffering.")
              (parse-chunked-body http callbacks data p end))
            (parse-body http callbacks data p end))
        (setf (http-state http) +state-first-line+))))
+
+
+(defun parse-header-value-parameters (data &key
+                                             header-value-callback
+                                             header-parameter-key-callback
+                                             header-parameter-value-callback)
+  (declare (type simple-string data)
+           (optimize (speed 3) (safety 2)))
+
+  (let* ((header-name-mark 0)
+         parameter-key-mark
+         parameter-value-mark
+         parsing-quoted-string-p
+         (p 0)
+         (end (length data))
+         (char (aref data p)))
+    (declare (type character char))
+
+    (when (= end 0)
+      (return-from parse-header-value-parameters 0))
+
+    (macrolet ((go-state (state &optional (advance 1))
+                   `(locally (declare (optimize (speed 3) (safety 0)))
+                      (incf p ,advance)
+                      (when (= p end)
+                        (go eof))
+                      (setq char (aref data p))
+                      (go ,state))))
+      (flet ((tokenp (char)
+               (declare (optimize (speed 3) (safety 0)))
+               (let ((byte (char-code char)))
+                 (and (< byte 128)
+                      (not (char= (the character (aref +tokens+ byte)) #\Nul))))))
+        (tagbody
+         parsing-header-value-start
+           (case char
+             ((#\Space #\Tab)
+              (go-state parsing-header-value))
+             (otherwise
+              (unless (tokenp char)
+                (error 'invalid-header-value))
+              (setq header-name-mark p)
+              (go-state parsing-header-value 0)))
+
+         parsing-header-value
+           (case char
+             (#\;
+              (when header-value-callback
+                (funcall (the function header-value-callback)
+                         data header-name-mark p))
+              (setq header-name-mark nil)
+              (go-state looking-for-parameter-key))
+             (otherwise (go-state parsing-header-value)))
+
+         looking-for-parameter-key
+           (case char
+             ((#\Space #\Tab #\; #\Newline #\Return)
+              (go-state looking-for-parameter-key))
+             (otherwise
+              (unless (tokenp char)
+                (error 'invalid-parameter-key))
+              (setq parameter-key-mark p)
+              (go-state parsing-parameter-key)))
+
+         parsing-parameter-key
+           (case char
+             (#\=
+              (assert parameter-key-mark)
+              (when header-parameter-key-callback
+                (funcall (the function header-parameter-key-callback)
+                         data parameter-key-mark p))
+              (setq parameter-key-mark nil)
+              (go-state parsing-parameter-value-start))
+             (otherwise
+              (unless (tokenp char)
+                (error 'invalid-parameter-key))
+              (go-state parsing-parameter-key)))
+
+         parsing-parameter-value-start
+           (case char
+             (#\"
+              ;; quoted-string
+              (setq parameter-value-mark (1+ p))
+              (setq parsing-quoted-string-p t)
+              (go-state parsing-parameter-quoted-value))
+             ((#.+space+ #.+tab+)
+              (go-state parsing-parameter-value-start))
+             (otherwise
+              (setq parameter-value-mark p)
+              (go-state parsing-parameter-value 0)))
+
+         parsing-parameter-quoted-value
+           (if (char= char #\")
+               (progn
+                 (assert parameter-value-mark)
+                 (setq parsing-quoted-string-p nil)
+                 (when header-parameter-value-callback
+                   (funcall (the function header-parameter-value-callback)
+                            data parameter-value-mark p))
+                 (setq parameter-value-mark nil)
+                 (go-state looking-for-parameter-key))
+               (go-state parsing-parameter-quoted-value))
+
+         parsing-parameter-value
+           (case char
+             (#\;
+              (assert parameter-value-mark)
+              (when header-parameter-value-callback
+                (funcall (the function header-parameter-value-callback)
+                         data parameter-value-mark p))
+              (setq parameter-value-mark nil)
+              (go-state looking-for-parameter-key))
+             (otherwise
+              (go-state parsing-parameter-value)))
+
+         eof
+           (when header-name-mark
+             (when header-value-callback
+               (funcall (the function header-value-callback)
+                        data header-name-mark p)))
+           (when parameter-key-mark
+             (error 'invalid-eof-state))
+           (when parameter-value-mark
+             (when parsing-quoted-string-p
+               (error 'invalid-eof-state))
+             (when header-parameter-value-callback
+               (funcall (the function header-parameter-value-callback)
+                        data parameter-value-mark p))))))
+    p))

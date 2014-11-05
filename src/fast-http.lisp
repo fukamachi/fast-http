@@ -3,13 +3,19 @@
   (:use :cl
         :fast-http.http
         :fast-http.parser
+        :fast-http.multipart-parser
         :fast-http.body-buffer
         :fast-http.byte-vector
         :fast-http.error
         :xsubseq)
+  (:import-from :fast-http.http
+                :+state-body+)
+  (:import-from :fast-http.parser
+                :parse-header-value-parameters)
+  (:import-from :fast-http.multipart-parser
+                :+body-done+)
   (:import-from :fast-http.util
                 :defun-careful
-                :make-collector
                 :number-string-p)
   (:import-from :babel
                 :octets-to-string)
@@ -31,12 +37,19 @@
            :http-chunked-p
            :http-upgrade-p
 
+           ;; multipart parser
+           :make-multipart-parser
+
            ;; Low-level parser API
            :http
            :http-p
            :make-http
            :parse-request
            :parse-response
+
+           :http-multipart-parse
+           :ll-multipart-parser
+           :make-ll-multipart-parser
 
            ;; body-buffer
            :*default-memory-limit*
@@ -153,7 +166,6 @@
                              (xnconcf header-value-buffer
                                       (xsubseq (the simple-byte-vector data) start end)))
              :headers-complete (lambda (http)
-                                 (declare (ignore http))
                                  (collect-prev-header-value)
                                  (setq header-value-buffer nil)
                                  (when header-callback
@@ -207,7 +219,6 @@
              (funcall (the function finish-callback))))))
       (values http header-complete-p completedp))))
 
-#+todo
 (defun find-boundary (content-type)
   (declare (type string content-type))
   (let ((parsing-boundary nil))
@@ -227,7 +238,6 @@
                                      (when parsing-boundary
                                        (return-from find-boundary (subseq data start end)))))))
 
-#+todo
 (defun make-multipart-parser (content-type callback)
   (check-type content-type string)
   (let ((boundary (find-boundary content-type)))
@@ -263,7 +273,7 @@
                    (setf (gethash parsing-header-field headers)
                          header-value)))))
         (setq callbacks
-              (make-ll-callbacks
+              (make-callbacks
                :header-field (lambda (parser data start end)
                                (declare (ignore parser))
                                (collect-prev-header-value)
