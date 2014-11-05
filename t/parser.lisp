@@ -1,8 +1,9 @@
 (in-package :cl-user)
 (defpackage fast-http-test.parser
   (:use :cl
-        :fast-http
+        :fast-http.http
         :fast-http.parser
+        :fast-http.error
         :fast-http-test.test-utils
         :prove
         :babel))
@@ -12,112 +13,52 @@
 
 (plan nil)
 
-;;
-;; Overflow
-
-(subtest "Header overflow error (request)"
-  (let ((parser (make-ll-parser :type :request))
-        (buf (bv #?"header-key: header-value\r\n")))
-    (http-parse parser (make-ll-callbacks)
-                (bv #?"GET / HTTP/1.1\r\n"))
-    (is-error (dotimes (i 10000)
-                (http-parse parser (make-ll-callbacks)
-                            buf))
-              'header-overflow)))
-
-(subtest "Header overflow error (response)"
-  (let ((parser (make-ll-parser :type :response))
-        (buf (bv #?"header-key: header-value\r\n")))
-    (http-parse parser (make-ll-callbacks)
-                (bv #?"HTTP/1.0 200 OK\r\n"))
-    (is-error (dotimes (i 10000)
-                (http-parse parser (make-ll-callbacks) buf))
-              'header-overflow)))
-
-(subtest "No overflow for a long body"
-  (flet ((run-test (type length)
-           (let* ((parser (make-ll-parser :type type))
-                  (header
-                    (ecase type
-                      (:request
-                       (bv #?"POST / HTTP/1.0\r\nConnection: Keep-Alive\r\nContent-Length: ${length}\r\n\r\n"))
-                      (:response
-                       (bv #?"HTTP/1.0 200 OK\r\nConnection: Keep-Alive\r\nContent-Length: ${length}\r\n\r\n"))))
-                  (buf (bv header :length 3000)))
-             (is (http-parse parser (make-ll-callbacks)
-                             buf :end (length header))
-                 (length header))
-             (dotimes (i length)
-               (http-parse parser (make-ll-callbacks)
-                           (bv "a"))))))
-    (run-test :request 1000)
-    (run-test :request 100000)
-    (run-test :response 1000)
-    (run-test :response 100000)))
-
-
 (defun test-simple (&rest objects)
-  (let ((parser (make-ll-parser)))
-    (http-parse parser (make-ll-callbacks)
-                (bv (apply #'concatenate 'string objects)))
-    parser))
+  (let ((http (make-http)))
+    (parse-request http (make-callbacks)
+                   (bv (apply #'concatenate 'string objects)))
+    http))
 
-(defun test-parser (&rest objects)
-  (let* (info
-         (headers '())
-         url
-         (body "")
-         (callbacks (make-ll-callbacks
-                    :headers-complete (lambda (parser)
-                                        (setf info
-                                              (list :method (parser-method parser)
-                                                    :status-code (if (eql (parser-status-code parser) 0)
-                                                                     nil
-                                                                     (parser-status-code parser))
-                                                    :http-major (parser-http-major parser)
-                                                    :http-minor (parser-http-minor parser))))
-                    :header-field (lambda (parser data start end)
-                                    (declare (ignore parser))
-                                    (push (cons (babel:octets-to-string data :start start :end end)
-                                                nil)
-                                          headers))
-                    :header-value (lambda (parser data start end)
-                                    (declare (ignore parser))
-                                    (setf (cdr (car headers))
-                                          (append (cdr (car headers))
-                                                  (list (babel:octets-to-string data :start start :end end)))))
-                    :url (lambda (parser data start end)
-                           (declare (ignore parser))
-                           (setq url (babel:octets-to-string (subseq data start end))))
-                    :body (lambda (parser data start end)
-                            (declare (ignore parser))
-                            (setq body
-                                  (concatenate 'string
-                                               body
-                                               (babel:octets-to-string (subseq data start end)))))))
-         (parser (make-ll-parser)))
-    (http-parse parser callbacks
-                (bv (apply #'concatenate 'string objects)))
-    (append info
-            (list :url url)
-            (list :headers (loop for (field . values) in (nreverse headers)
-                                 append (list field (apply #'concatenate 'string values))))
-            (list :body body))))
-
-
-;;
-;; Requests
-
-(is-error (test-simple #?"GET / HTP/1.1\r\n\r\n")
-          'strict-error
-          "Invalid version")
-
-(ok (test-simple #?"GET / HTTP/1.1\r\n"
-                 #?"Content-Type: text/plain\r\n"
-                 #?"Content-Length: 6\r\n"
-                 #?"\r\n"
-                 "fooba")
-    "Well-formed but imcomplete body")
+(defun test-parser (type &rest objects)
+  (let ((http (make-http))
+        (headers '())
+        url
+        (body ""))
+    (funcall (ecase type
+               (:request #'parse-request)
+               (:response #'parse-response))
+             http
+             (make-callbacks
+              :header-field (lambda (http data start end)
+                              (declare (ignore http))
+                              (push (cons (babel:octets-to-string data :start start :end end)
+                                          nil)
+                                    headers))
+              :header-value (lambda (http data start end)
+                              (declare (ignore http))
+                              (setf (cdr (car headers))
+                                    (append (cdr (car headers))
+                                            (list (babel:octets-to-string data :start start :end end)))))
+              :body (lambda (http data start end)
+                      (declare (ignore http))
+                      (setq body
+                            (concatenate 'string
+                                         body
+                                         (babel:octets-to-string data :start start :end end))))
+              :url (lambda (http data start end)
+                     (declare (ignore http))
+                     (setq url (babel:octets-to-string data :start start :end end))))
+             (bv (apply #'concatenate 'string objects)))
+    (list :method (http-method http)
+          :status-code (if (eql (http-status http) 0)
+                           nil
+                           (http-status http))
+          :http-major (http-major-version http)
+          :http-minor (http-minor-version http)
+          :url url
+          :headers (loop for (field . values) in (nreverse headers)
+                         append (list field (apply #'concatenate 'string values)))
+          :body body)))
 
 (subtest "HTTP methods"
   (dolist (method '("DELETE"
@@ -162,7 +103,7 @@
                     "0"))
     (is-error (test-simple (concatenate 'string method #?" / HTTP/1.1\r\n\r\n"))
               'invalid-method
-              method)))
+              (format nil "~A" method))))
 
 (is-error (test-simple #?"GET / HTTP/1.1\r\n"
                        #?"name\r\n"
@@ -206,7 +147,8 @@
                  #?"\t-----END CERTIFICATE-----\r\n"
                  #?"\r\n"))
 
-(is (test-parser #?"GET /test HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET /test HTTP/1.1\r\n"
                  #?"User-Agent: curl/7.18.0 (i486-pc-linux-gnu) libcurl/7.18.0 OpenSSL/0.9.8g zlib/1.2.3.3 libidn/1.1\r\n"
                  #?"Host: 0.0.0.0=5000\r\n"
                  #?"Accept: */*\r\n"
@@ -222,7 +164,8 @@
       :body "")
     "curl GET")
 
-(is (test-parser #?"GET /favicon.ico HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET /favicon.ico HTTP/1.1\r\n"
                  #?"Host: 0.0.0.0=5000\r\n"
                  #?"User-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9) Gecko/2008061015 Firefox/3.0\r\n"
                  #?"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
@@ -248,7 +191,8 @@
       :body "")
     "Firefox GET")
 
-(is (test-parser #?"GET /dumbfuck HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET /dumbfuck HTTP/1.1\r\n"
                  #?"aaaaaaaaaaaaa:++++++++++\r\n"
                  #?"\r\n")
     '(:method :get
@@ -260,7 +204,8 @@
       :body "")
     "dumbfuck")
 
-(is (test-parser #?"GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n"
                  #?"\r\n")
     '(:method :get
       :status-code nil
@@ -271,7 +216,8 @@
       :body "")
     "fragment in URL")
 
-(is (test-parser #?"GET /get_no_headers_no_body/world HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET /get_no_headers_no_body/world HTTP/1.1\r\n"
                  #?"\r\n")
     '(:method :get
       :status-code nil
@@ -282,7 +228,8 @@
       :body "")
     "get no headers no body")
 
-(is (test-parser #?"GET /get_one_header_no_body HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET /get_one_header_no_body HTTP/1.1\r\n"
                  #?"Accept: */*\r\n"
                  #?"\r\n")
     '(:method :get
@@ -294,7 +241,8 @@
       :body "")
     "get one header no body")
 
-(is (test-parser #?"GET /get_funky_content_length_body_hello HTTP/1.0\r\n"
+(is (test-parser :request
+                 #?"GET /get_funky_content_length_body_hello HTTP/1.0\r\n"
                  #?"conTENT-Length: 5\r\n"
                  #?"\r\n"
                  "HELLO")
@@ -307,7 +255,8 @@
       :body "HELLO")
     "get funky content length body hello")
 
-(is (test-parser #?"POST /post_identity_body_world?q=search#hey HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"POST /post_identity_body_world?q=search#hey HTTP/1.1\r\n"
                  #?"Accept: */*\r\n"
                  #?"Transfer-Encoding: identity\r\n"
                  #?"Content-Length: 5\r\n"
@@ -324,7 +273,8 @@
       :body "World")
     "post identity body world")
 
-(is (test-parser #?"POST /post_chunked_all_your_base HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"POST /post_chunked_all_your_base HTTP/1.1\r\n"
                  #?"Transfer-Encoding: chunked\r\n"
                  #?"\r\n"
                  #?"1e\r\nall your base are belong to us\r\n"
@@ -339,7 +289,8 @@
       :body "all your base are belong to us")
     "post - chunked body: all your base are belong to us")
 
-(is (test-parser #?"POST /two_chunks_mult_zero_end HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"POST /two_chunks_mult_zero_end HTTP/1.1\r\n"
                  #?"Transfer-Encoding: chunked\r\n"
                  #?"\r\n"
                  #?"5\r\nhello\r\n"
@@ -355,7 +306,8 @@
       :body "hello world")
     "two chunks ; triple zero ending")
 
-(is (test-parser #?"POST /chunked_w_trailing_headers HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"POST /chunked_w_trailing_headers HTTP/1.1\r\n"
                  #?"Transfer-Encoding: chunked\r\n"
                  #?"\r\n"
                  #?"5\r\nhello\r\n"
@@ -375,7 +327,8 @@
       :body "hello world")
     "chunked with trailing headers. blech.")
 
-(is (test-parser #?"POST /chunked_w_bullshit_after_length HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"POST /chunked_w_bullshit_after_length HTTP/1.1\r\n"
                  #?"Transfer-Encoding: chunked\r\n"
                  #?"\r\n"
                  #?"5; ihatew3;whatthefuck=aretheseparametersfor\r\nhello\r\n"
@@ -391,7 +344,8 @@
       :body "hello world")
     "with bullshit after the length")
 
-(is (test-parser #?"GET /with_\"stupid\"_quotes?foo=\"bar\" HTTP/1.1\r\n\r\n")
+(is (test-parser :request
+                 #?"GET /with_\"stupid\"_quotes?foo=\"bar\" HTTP/1.1\r\n\r\n")
     '(:method :get
       :status-code nil
       :http-major 1
@@ -401,7 +355,8 @@
       :body "")
     "with quotes")
 
-(is (test-parser #?"GET /test HTTP/1.0\r\n"
+(is (test-parser :request
+                 #?"GET /test HTTP/1.0\r\n"
                  #?"Host: 0.0.0.0:5000\r\n"
                  #?"User-Agent: ApacheBench/2.3\r\n"
                  #?"Accept: */*\r\n\r\n")
@@ -416,7 +371,8 @@
       :body "")
     "ApacheBench GET")
 
-(is (test-parser #?"GET /test.cgi?foo=bar?baz HTTP/1.1\r\n\r\n")
+(is (test-parser :request
+                 #?"GET /test.cgi?foo=bar?baz HTTP/1.1\r\n\r\n")
     '(:method :get
       :status-code nil
       :http-major 1
@@ -426,7 +382,8 @@
       :body "")
     "Query URL with question mark")
 
-(is (test-parser #?"\r\nGET /test HTTP/1.1\r\n\r\n")
+(is (test-parser :request
+                 #?"\r\nGET /test HTTP/1.1\r\n\r\n")
     '(:method :get
       :status-code nil
       :http-major 1
@@ -436,7 +393,8 @@
       :body "")
     "Newline prefix GET")
 
-(is (test-parser #?"GET /demo HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET /demo HTTP/1.1\r\n"
                  #?"Host: example.com\r\n"
                  #?"Connection: Upgrade\r\n"
                  #?"Sec-WebSocket-Key2: 12998 5 Y3 1  .P00\r\n"
@@ -461,7 +419,8 @@
       :body "")
     "Upgrade request")
 
-(is (test-parser #?"CONNECT 0-home0.netscape.com:443 HTTP/1.0\r\n"
+(is (test-parser :request
+                 #?"CONNECT 0-home0.netscape.com:443 HTTP/1.0\r\n"
                  #?"User-agent: Mozilla/1.1N\r\n"
                  #?"Proxy-authorization: basic aGVsbG86d29ybGQ=\r\n"
                  #?"\r\n"
@@ -477,7 +436,8 @@
       :body "")
     "CONNECT request")
 
-(is (test-parser #?"REPORT /test HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"REPORT /test HTTP/1.1\r\n"
                  #?"\r\n")
     '(:method :report
       :status-code nil
@@ -488,7 +448,8 @@
       :body "")
     "REPORT request")
 
-(is (test-parser #?"GET /\r\n"
+(is (test-parser :request
+                 #?"GET /\r\n"
                  #?"\r\n")
     '(:method :get
       :status-code nil
@@ -499,7 +460,8 @@
       :body "")
     "request with no HTTP version")
 
-(is (test-parser #?"M-SEARCH * HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"M-SEARCH * HTTP/1.1\r\n"
                  #?"HOST: 239.255.255.250:1900\r\n"
                  #?"MAN: \"ssdp:discover\"\r\n"
                  #?"ST: \"ssdp:all\"\r\n"
@@ -515,7 +477,8 @@
       :body "")
     "M-SEARCH request")
 
-(is (test-parser #?"GET / HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET / HTTP/1.1\r\n"
                  #?"Line1:   abc\r\n"
                  #?"\tdef\r\n"
                  #?" ghi\r\n"
@@ -543,7 +506,8 @@
       :body "")
     "line folding in header value")
 
-(is (test-parser #?"GET http://hypnotoad.org?hail=all HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET http://hypnotoad.org?hail=all HTTP/1.1\r\n"
                  #?"\r\n")
     '(:method :get
       :status-code nil
@@ -554,7 +518,8 @@
       :body "")
     "host terminated by a query string")
 
-(is (test-parser #?"GET http://hypnotoad.org:1234?hail=all HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET http://hypnotoad.org:1234?hail=all HTTP/1.1\r\n"
                  #?"\r\n")
     '(:method :get
       :status-code nil
@@ -565,7 +530,8 @@
       :body "")
     "host:port terminated by a query string")
 
-(is (test-parser #?"GET http://hypnotoad.org:1234 HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET http://hypnotoad.org:1234 HTTP/1.1\r\n"
                  #?"\r\n")
     '(:method :get
       :status-code nil
@@ -576,7 +542,8 @@
       :body "")
     "host:port terminated by a space")
 
-(is (test-parser #?"PATCH /file.txt HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"PATCH /file.txt HTTP/1.1\r\n"
                  #?"Host: www.example.com\r\n"
                  #?"Content-Type: application/example\r\n"
                  #?"If-Match: \"e0023aa4e\"\r\n"
@@ -595,7 +562,8 @@
       :body "cccccccccc")
     "PATCH request")
 
-(is (test-parser #?"CONNECT HOME0.NETSCAPE.COM:443 HTTP/1.0\r\n"
+(is (test-parser :request
+                 #?"CONNECT HOME0.NETSCAPE.COM:443 HTTP/1.0\r\n"
                  #?"User-agent: Mozilla/1.1N\r\n"
                  #?"Proxy-authorization: basic aGVsbG86d29ybGQ=\r\n"
                  #?"\r\n")
@@ -609,7 +577,8 @@
       :body "")
     "CONNECT caps request")
 
-(is (test-parser #?"GET /δ¶/δt/pope?q=1#narf HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET /δ¶/δt/pope?q=1#narf HTTP/1.1\r\n"
                  #?"Host: github.com\r\n"
                  #?"\r\n")
     '(:method :get
@@ -621,7 +590,8 @@
       :body "")
     "utf-8 path request")
 
-(is (test-parser #?"CONNECT home_0.netscape.com:443 HTTP/1.0\r\n"
+(is (test-parser :request
+                 #?"CONNECT home_0.netscape.com:443 HTTP/1.0\r\n"
                  #?"User-agent: Mozilla/1.1N\r\n"
                  #?"Proxy-authorization: basic aGVsbG86d29ybGQ=\r\n"
                  #?"\r\n")
@@ -635,7 +605,8 @@
       :body "")
     "underscore in hostname")
 
-(is (test-parser #?"POST / HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"POST / HTTP/1.1\r\n"
                  #?"Host: www.example.com\r\n"
                  #?"Content-Type: application/x-www-form-urlencoded\r\n"
                  #?"Content-Length: 4\r\n"
@@ -652,7 +623,8 @@
       :body "q=42")
     "eat CRLF between requests, no \"Connection: close\" header")
 
-(is (test-parser #?"POST / HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"POST / HTTP/1.1\r\n"
                  #?"Host: www.example.com\r\n"
                  #?"Content-Type: application/x-www-form-urlencoded\r\n"
                  #?"Content-Length: 4\r\n"
@@ -671,7 +643,8 @@
       :body "q=42")
     "eat CRLF between requests even if \"Connection: close\" is set")
 
-(is (test-parser #?"PURGE /file.txt HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"PURGE /file.txt HTTP/1.1\r\n"
                  #?"Host: www.example.com\r\n"
                  #?"\r\n")
     '(:method :purge
@@ -683,7 +656,8 @@
       :body "")
     "PURGE request")
 
-(is (test-parser #?"SEARCH / HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"SEARCH / HTTP/1.1\r\n"
                  #?"Host: www.example.com\r\n"
                  #?"\r\n")
     '(:method :search
@@ -695,7 +669,8 @@
       :body "")
     "SEARCH request")
 
-(is (test-parser #?"GET http://a%12:b!&*$@hypnotoad.org:1234/toto HTTP/1.1\r\n"
+(is (test-parser :request
+                 #?"GET http://a%12:b!&*$@hypnotoad.org:1234/toto HTTP/1.1\r\n"
                  #?"\r\n")
     '(:method :get
       :status-code nil
@@ -706,6 +681,7 @@
       :body "")
     "host:port and basic_auth")
 
+#+nil
 (is (test-parser #?"GET / HTTP/1.1\n"
                  #?"Line1:   abc\n"
                  #?"\tdef\n"
@@ -722,7 +698,6 @@
                  #?" close\n"
                  #?"\n")
     '(:method :get
-      :status-code nil
       :http-major 1
       :http-minor 1
       :url "/"
@@ -736,9 +711,10 @@
 
 
 ;;
-;; Responses
+;; Response
 
-(is (test-parser #?"HTTP/1.1 301 Moved Permanently\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 301 Moved Permanently\r\n"
                  #?"Location: http://www.google.com/\r\n"
                  #?"Content-Type: text/html; charset=UTF-8\r\n"
                  #?"Date: Sun, 26 Apr 2009 11:11:49 GMT\r\n"
@@ -776,7 +752,8 @@
               #?"</BODY></HTML>\r\n"))
     "Google 301")
 
-(is (test-parser #?"HTTP/1.1 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 200 OK\r\n"
                  #?"Date: Tue, 04 Aug 2009 07:59:32 GMT\r\n"
                  #?"Server: Apache\r\n"
                  #?"X-Powered-By: Servlet/2.5 JSP/2.1\r\n"
@@ -814,7 +791,8 @@
               #?"</SOAP-ENV:Envelope>"))
     "no Content-Length response")
 
-(is (test-parser #?"HTTP/1.1 404 Not Found\r\n\r\n")
+(is (test-parser :response
+                 #?"HTTP/1.1 404 Not Found\r\n\r\n")
     '(:method nil
       :status-code 404
       :http-major 1
@@ -824,7 +802,8 @@
       :body "")
     "404 no headers and no body")
 
-(is (test-parser #?"HTTP/1.1 301\r\n\r\n")
+(is (test-parser :response
+                 #?"HTTP/1.1 301\r\n\r\n")
     '(:method nil
       :status-code 301
       :http-major 1
@@ -834,7 +813,8 @@
       :body "")
     "301 no response phase")
 
-(is (test-parser #?"HTTP/1.1 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 200 OK\r\n"
                  #?"Content-Type: text/plain\r\n"
                  #?"Transfer-Encoding: chunked\r\n"
                  #?"\r\n"
@@ -858,7 +838,9 @@
                #?"and this is the second one\r\n"))
     "200 trailing space on chunked body")
 
-(is (test-parser #?"HTTP/1.1 200 OK\n"
+#+todo
+(is (test-parser :response
+                 #?"HTTP/1.1 200 OK\n"
                  #?"Content-Type: text/html; charset=utf-8\n"
                  #?"Connection: close\n"
                  #?"\n"
@@ -873,7 +855,8 @@
       :body "these headers are from http://news.ycombinator.com/")
     "no carriage ret")
 
-(is (test-parser #?"HTTP/1.1 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 200 OK\r\n"
                  #?"Content-Type: text/html; charset=UTF-8\r\n"
                  #?"Content-Length: 11\r\n"
                  #?"Proxy-Connection: close\r\n"
@@ -892,7 +875,8 @@
       :body "hello world")
     "proxy connection")
 
-(is (test-parser #?"HTTP/1.1 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 200 OK\r\n"
                  #?"Server: DCLK-AdSvr\r\n"
                  #?"Content-Type: text/xml\r\n"
                  #?"Content-Length: 0\r\n"
@@ -909,7 +893,8 @@
       :body "")
     "underscore header key")
 
-(is (test-parser #?"HTTP/1.0 301 Moved Permanently\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.0 301 Moved Permanently\r\n"
                  #?"Date: Thu, 03 Jun 2010 09:56:32 GMT\r\n"
                  #?"Server: Apache/2.2.3 (Red Hat)\r\n"
                  #?"Cache-Control: public\r\n"
@@ -937,7 +922,8 @@
       :body "")
     "bonjourmadame.fr")
 
-(is (test-parser #?"HTTP/1.1 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 200 OK\r\n"
                  #?"Date: Tue, 28 Sep 2010 01:14:13 GMT\r\n"
                  #?"Server: Apache\r\n"
                  #?"Cache-Control: no-cache, must-revalidate\r\n"
@@ -970,7 +956,8 @@
       :body "")
     "field underscore")
 
-(is (test-parser #?"HTTP/1.1 500 Oriëntatieprobleem\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 500 Oriëntatieprobleem\r\n"
                  #?"Date: Fri, 5 Nov 2010 23:07:12 GMT+2\r\n"
                  #?"Content-Length: 0\r\n"
                  #?"Connection: close\r\n"
@@ -986,7 +973,8 @@
       :body "")
     "non-ASCII in status line")
 
-(is (test-parser #?"HTTP/0.9 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/0.9 200 OK\r\n"
                  #?"\r\n")
     '(:method nil
       :status-code 200
@@ -997,7 +985,8 @@
       :body "")
     "HTTP version 0.9")
 
-(is (test-parser #?"HTTP/1.1 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 200 OK\r\n"
                  #?"Content-Type: text/plain\r\n"
                  #?"\r\n"
                  "hello world")
@@ -1010,7 +999,8 @@
       :body "hello world")
     "neither Content-Length nor Transfer-Encoding response")
 
-(is (test-parser #?"HTTP/1.0 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.0 200 OK\r\n"
                  #?"Connection: keep-alive\r\n"
                  #?"\r\n")
     '(:method nil
@@ -1022,7 +1012,8 @@
       :body "")
     "HTTP/1.0 with keep-alive and EOF-terminated 200 status")
 
-(is (test-parser #?"HTTP/1.0 204 No content\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.0 204 No content\r\n"
                  #?"Connection: keep-alive\r\n"
                  #?"\r\n")
     '(:method nil
@@ -1034,7 +1025,8 @@
       :body "")
     "HTTP/1.0 with keep-alive and a 204 status")
 
-(is (test-parser #?"HTTP/1.1 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 200 OK\r\n"
                  #?"\r\n")
     '(:method nil
       :status-code 200
@@ -1045,7 +1037,8 @@
       :body "")
     "HTTP/1.1 with an EOF-terminated 200 status")
 
-(is (test-parser #?"HTTP/1.1 204 No content\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 204 No content\r\n"
                  #?"\r\n")
     '(:method nil
       :status-code 204
@@ -1056,7 +1049,8 @@
       :body "")
     "HTTP/1.1 with a 204 status")
 
-(is (test-parser #?"HTTP/1.1 204 No content\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 204 No content\r\n"
                  #?"Connection: close\r\n"
                  #?"\r\n")
     '(:method nil
@@ -1068,7 +1062,8 @@
       :body "")
     "HTTP/1.1 with a 204 status and keep-alive disabled")
 
-(is (test-parser #?"HTTP/1.1 200 OK\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 200 OK\r\n"
                  #?"Transfer-Encoding: chunked\r\n"
                  #?"\r\n"
                  #?"0\r\n"
@@ -1082,7 +1077,8 @@
       :body "")
     "HTTP/1.1 with chunked endocing and a 200 response")
 
-(is (test-parser #?"HTTP/1.1 301 MovedPermanently\r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 301 MovedPermanently\r\n"
                  #?"Date: Wed, 15 May 2013 17:06:33 GMT\r\n"
                  #?"Server: Server\r\n"
                  #?"x-amz-id-1: 0GPHKXSJQ826RK7GZEB2\r\n"
@@ -1114,7 +1110,8 @@
       :body #?"\n")
     "amazon.com")
 
-(is (test-parser #?"HTTP/1.1 200 \r\n"
+(is (test-parser :response
+                 #?"HTTP/1.1 200 \r\n"
                  #?"\r\n")
     '(:method nil
       :status-code 200
@@ -1124,77 +1121,5 @@
       :headers ()
       :body "")
     "empty reason phrase after space")
-
-
-;;
-;; parse-header-value-parameters
-
-(defun test-parse-header-parameters (data expected &optional description)
-  (let (header-value
-        parameters)
-    (parse-header-value-parameters data
-                                   :header-value-callback
-                                   (lambda (data start end)
-                                     (setq header-value (subseq data start end)))
-                                   :header-parameter-key-callback
-                                   (lambda (data start end)
-                                     (push (subseq data start end)
-                                           parameters))
-                                   :header-parameter-value-callback
-                                   (lambda (data start end)
-                                     (push (subseq data start end)
-                                           parameters)))
-    (is (list header-value (nreverse parameters))
-        expected
-        description)))
-
-(test-parse-header-parameters "none"
-                              '("none" ())
-                              "no parameters")
-
-(test-parse-header-parameters "none;"
-                              '("none" ())
-                              "no parameters")
-
-(test-parse-header-parameters "form-data; name=\"key\""
-                              '("form-data" ("name" "key"))
-                              "quoted-string value")
-
-(test-parse-header-parameters "form-data; name=key"
-                              '("form-data" ("name" "key"))
-                              "tokens value")
-
-(test-parse-header-parameters "form-data; name=key;"
-                              '("form-data" ("name" "key"))
-                              "ends with a needless semi-colon")
-
-(is-error (test-parse-header-parameters "form-data; name=\"key" nil)
-          'invalid-eof-state
-          "Unexpected EOF when parsing a quoted-string")
-
-(test-parse-header-parameters #?"form-data; name=\"key\nmultiline\""
-                              '("form-data" ("name" #?"key\nmultiline"))
-                              "multiline")
-
-(test-parse-header-parameters #?"form-data; name=\"フィールド1\""
-                              '("form-data" ("name" #?"フィールド1"))
-                              "utf-8")
-
-(test-parse-header-parameters #?"form-data; name=\"upload1\"; filename=\"file.txt\""
-                              '("form-data" ("name" "upload1"
-                                             "filename" "file.txt"))
-                              "multiple parameters")
-
-(test-parse-header-parameters #?"gzip;q=1.0, identity; q=0.5, *;q=0"
-                              '("gzip" ("q" "1.0, identity"
-                                        "q" "0.5, *"
-                                        "q" "0"))
-                              "Accept-Encoding")
-
-(test-parse-header-parameters #?"gzip;q=1.0,\nidentity;\nq=0.5, *;q=0"
-                              '("gzip" ("q" #?"1.0,\nidentity"
-                                        "q" "0.5, *"
-                                        "q" "0"))
-                              "new lines")
 
 (finalize)

@@ -26,9 +26,7 @@
                                 (:response (make-http-response)))
                               :header-callback (lambda (h) (setf got-headers h))
                               :body-callback (lambda (b)
-                                               (unless got-body
-                                                 (setf got-body (make-concatenated-xsubseqs)))
-                                               (xnconcf got-body (xsubseq b 0)))
+                                               (push b got-body))
                               :finish-callback (lambda () (setf finishedp t)))))
     (subtest description
       (loop for i from 1
@@ -49,7 +47,8 @@
                  (when (and completedp
                             (not body-test-done-p))
                    (is (and got-body
-                            (coerce-to-sequence got-body)) body "body" :test #'equalp)
+                            (apply #'concatenate '(simple-array (unsigned-byte 8) (*))
+                                   (nreverse got-body))) body "body" :test #'equalp)
                    (setf body-test-done-p t)))))))
 
 (defun is-request (chunks headers body description)
@@ -392,6 +391,7 @@
             nil
             "host:port and basic_auth")
 
+#+nil
 (is-request (str #?"GET / HTTP/1.1\n"
                  #?"Line1:   abc\n"
                  #?"\tdef\n"
@@ -472,7 +472,15 @@
                :x-powered-by "Servlet/2.5 JSP/2.1"
                :content-type "text/xml; charset=utf-8"
                :connection "close")
-             nil
+             (bv (str #?"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                      #?"<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\">\n"
+                      #?"  <SOAP-ENV:Body>\n"
+                      #?"    <SOAP-ENV:Fault>\n"
+                      #?"       <faultcode>SOAP-ENV:Client</faultcode>\n"
+                      #?"       <faultstring>Client Error</faultstring>\n"
+                      #?"    </SOAP-ENV:Fault>\n"
+                      #?"  </SOAP-ENV:Body>\n"
+                      #?"</SOAP-ENV:Envelope>"))
              "no Content-Length response")
 
 (finalize)
