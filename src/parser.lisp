@@ -131,7 +131,7 @@ us a never-ending header that the application keeps buffering.")
          else
            do (advance)))
 
-(define-condition expect-failed (simple-error) ())
+(define-condition expect-failed (parsing-error) ())
 
 (defmacro expect (form &optional (error ''expect-failed) (advance T))
   `(progn
