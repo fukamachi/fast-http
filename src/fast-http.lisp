@@ -168,6 +168,7 @@
              :headers-complete (lambda (http)
                                  (collect-prev-header-value)
                                  (setq header-value-buffer nil)
+                                 (setf (http-headers http) headers)
                                  (when header-callback
                                    (funcall (the function header-callback) headers))
                                  (when (and (not (http-chunked-p http))

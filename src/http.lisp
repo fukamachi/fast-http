@@ -19,6 +19,7 @@
            :http-chunked-p
            :http-upgrade-p
 
+           :http-headers
            :http-resource
            :http-status-text
 
@@ -57,6 +58,8 @@
   (content-length nil :type (or null integer))
   (chunked-p nil :type boolean)
   (upgrade-p nil :type boolean)
+
+  headers
 
   ;; private
   (header-read 0 :type fixnum)
