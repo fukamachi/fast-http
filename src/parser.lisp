@@ -131,15 +131,23 @@ us a never-ending header that the application keeps buffering.")
          else
            do (advance)))
 
-(define-condition expect-failed (parsing-error) ())
+(define-condition expect-failed (parsing-error)
+  ((form :initarg :form
+         :initform nil))
+  (:report (lambda (condition stream)
+             (format stream "Expectation failed: ~S"
+                     (slot-value condition 'form)))))
 
 (defmacro expect (form &optional (error ''expect-failed) (advance T))
   `(progn
      ,@(and advance `((advance)))
      ,(if error
-          `(unless (progn ,form)
-             (error ,error))
-          `(progn ,form))))
+          `(unless ,form
+             (error ,error
+                    ,@(if (equal error ''expect-failed)
+                          `(:form ',form)
+                          nil)))
+          form)))
 
 (defmacro expect-byte (byte &optional (error ''expect-failed) (advance T))
   "Advance the pointer and check if the next byte is BYTE."
@@ -565,12 +573,12 @@ us a never-ending header that the application keeps buffering.")
           (declare (dynamic-extent body-end))
           (setf (http-content-length http) 0)
           (callback-data :body http callbacks data start body-end)
-          body-end)
+          (values body-end t))
         ;; still needs to read
         (progn
           (decf (http-content-length http) readable-count)
           (callback-data :body http callbacks data start end)
-          end))))
+          (values end nil)))))
 
 (defun-speedy http-message-needs-eof-p (http)
   (let ((status-code (http-status http)))
@@ -580,8 +588,7 @@ us a never-ending header that the application keeps buffering.")
 
     (when (and (< 99 status-code 200) ;; 1xx e.g. Continue
                (= status-code 204)    ;; No Content
-               (= status-code 304)    ;; Not Modified
-               )
+               (= status-code 304))   ;; Not Modified
       (return-from http-message-needs-eof-p nil))
 
     (when (or (http-chunked-p http)
@@ -589,29 +596,38 @@ us a never-ending header that the application keeps buffering.")
       (return-from http-message-needs-eof-p nil))
     T))
 
-(defun-speedy parse-body (http callbacks data start end)
+(defun-speedy parse-body (http callbacks data start end requestp)
   (declare (type http http)
            (type simple-byte-vector data)
            (type pointer start end))
-  (case (http-content-length http)
-    (0
-     ;; Content-Length header given but zero: Content-Length: 0\r\n
-     (callback-notify :message-complete http callbacks)
-     start)
-    ('nil
-     (if (http-message-needs-eof-p http)
-         ;; read until EOF
-         (progn
-           (callback-data :body http callbacks data start end)
-           end)
-         ;; message complete
-         (progn
-           (callback-notify :message-complete http callbacks)
-           end)))
-    (otherwise
-     ;; Content-Length header given and non-zero
-     (read-body-data http callbacks data start end)
-     (callback-notify :message-complete http callbacks))))
+  (macrolet ((message-complete ()
+               `(progn
+                  (callback-notify :message-complete http callbacks)
+                  (setf (http-state http) +state-first-line+))))
+    (case (http-content-length http)
+      (0
+       ;; Content-Length header given but zero: Content-Length: 0\r\n
+       (message-complete)
+       start)
+      ('nil
+       (if (or requestp
+               (not (http-message-needs-eof-p http)))
+           ;; Assume content-length 0 - read the next
+           (progn
+             (message-complete)
+             end)
+           ;; read until EOF
+           (progn
+             (callback-data :body http callbacks data start end)
+             (setf (http-mark http) end)
+             end)))
+      (otherwise
+       ;; Content-Length header given and non-zero
+       (multiple-value-bind (next completedp)
+           (read-body-data http callbacks data start end)
+         (when completedp
+           (message-complete))
+         next)))))
 
 (defmacro parse-chunked-size ()
   `(let ((unhex-val (unhex-byte byte)))
@@ -654,8 +670,14 @@ us a never-ending header that the application keeps buffering.")
              (type (unsigned-byte 8) byte))
 
     (tagbody
-       (when (= (http-state http) +state-body+)
-         (go body))
+       (cond
+         ((= (http-state http) +state-chunk-size+)
+          (go chunk-size))
+         ((= (http-state http) +state-body+)
+          (go body))
+         ((= (http-state http) +state-trailing-headers+)
+          (go trailing-headers))
+         (T (error 'invalid-internal-state)))
 
      chunk-size
        (parse-chunked-size)
@@ -665,20 +687,20 @@ us a never-ending header that the application keeps buffering.")
      body
        (cond
          ((zerop (http-content-length http))
-          ;; trailing
-          (callback-notify :message-complete http callbacks)
-          (setf (http-state http) +state-headers+)
-          (return-from parse-chunked-body
-            (prog1 (parse-headers http callbacks data p end)
-              (callback-notify :headers-complete http callbacks))))
+          ;; trailing headers
+          (setf (http-state http) +state-trailing-headers+))
          (T
           (advance-to (read-body-data http callbacks data p end))
           (expect-crlf)
           (advance)
           (setf (http-mark http) p)
           (setf (http-state http) +state-chunk-size+)
-          (return-from parse-chunked-body
-            (parse-chunked-body http callbacks data p end)))))))
+          (go chunk-size)))
+
+     trailing-headers
+       (return-from parse-chunked-body
+         (prog1 (parse-headers http callbacks data p end)
+           (callback-notify :message-complete http callbacks))))))
 
 (defun-speedy parse-request (http callbacks data &key (start 0) end)
   (declare (type http http)
@@ -702,13 +724,18 @@ us a never-ending header that the application keeps buffering.")
            ((= +state-body+ state)
             (go body))
            ((= +state-chunk-size+ state)
-            (go body))))
+            (go body))
+           ((= +state-trailing-headers+ state)
+            (go body))
+           (T (error 'invalid-internal-state))))
 
      first-line
        ;; skip first empty line (some clients add CRLF after POST content)
        (when (= byte +cr+)
          (expect-byte +lf+)
-         (advance))
+         (handler-case (advance)
+           (eof ()
+             (return-from parse-request p))))
 
        (setf (http-mark http) p)
        (callback-notify :message-begin http callbacks)
@@ -757,13 +784,20 @@ us a never-ending header that the application keeps buffering.")
          (callback-notify :message-complete http callbacks)
          (return-from parse-request p))
 
+       (setf (http-state http)
+             (if (http-chunked-p http)
+                 +state-chunk-size+
+                 +state-body+))
+
      body
        (if (http-chunked-p http)
+           (setq p (parse-chunked-body http callbacks data p end))
            (progn
-             (setf (http-state http) +state-chunk-size+)
-             (parse-chunked-body http callbacks data p end))
-           (parse-body http callbacks data p end))
-       (setf (http-state http) +state-first-line+))))
+             (setq p (parse-body http callbacks data p end t))
+             (unless (= p end)
+               (setq byte (aref data p))
+               (go first-line))))
+       (return-from parse-request p))))
 
 (defun-speedy parse-response (http callbacks data &key (start 0) end)
   (declare (type http http)
@@ -787,7 +821,10 @@ us a never-ending header that the application keeps buffering.")
            ((= +state-body+ state)
             (go body))
            ((= +state-chunk-size+ state)
-            (go body))))
+            (go body))
+           ((= +state-trailing-headers+ state)
+            (go body))
+           (T (error 'invalid-internal-state))))
 
      first-line
        (callback-notify :message-begin http callbacks)
@@ -819,14 +856,20 @@ us a never-ending header that the application keeps buffering.")
 
        (callback-notify :headers-complete http callbacks)
        (setf (http-header-read http) 0)
+       (setf (http-state http)
+             (if (http-chunked-p http)
+                 +state-chunk-size+
+                 +state-body+))
 
      body
        (if (http-chunked-p http)
+           (setq p (parse-chunked-body http callbacks data p end))
            (progn
-             (setf (http-state http) +state-chunk-size+)
-             (parse-chunked-body http callbacks data p end))
-           (parse-body http callbacks data p end))
-       (setf (http-state http) +state-first-line+))))
+             (setq p (parse-body http callbacks data p end nil))
+             (unless (= p end)
+               (setq byte (aref data p))
+               (go first-line))))
+       (return-from parse-response p))))
 
 
 (defun parse-header-value-parameters (data &key

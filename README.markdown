@@ -69,11 +69,11 @@ $ git clone https://github.com/fukamachi/fast-http
 
 - Parsing an HTTP request header 100000 times.
 
-In this benchmark, fast-http is **6.4 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
+In this benchmark, fast-http is **5.6 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
 
 | http-parser (C) | fast-http |
 | ---------------:| ---------:|
-|      0.289s     |   0.045s  |
+|      0.284s     |   0.050s  |
 
 ### Environment
 
@@ -99,10 +99,10 @@ In this benchmark, fast-http is **6.4 times faster** than [http-parser](https://
 
 ```
 Evaluation took:
-  0.045 seconds of real time
-  0.045009 seconds of total run time (0.044898 user, 0.000111 system)
+  0.050 seconds of real time
+  0.050187 seconds of total run time (0.050089 user, 0.000098 system)
   100.00% CPU
-  134,443,059 processor cycles
+  151,546,149 processor cycles
   0 bytes consed
 ```
 
@@ -146,7 +146,6 @@ main (void)
   for (i = 0; i < 100000; i++) {
     http_parser_init(parser, HTTP_REQUEST);
     parsed = http_parser_execute(parser, &settings_null, buf, strlen(buf));
-    assert(parsed == strlen(buf));
   }
   end = (float)clock()/CLOCKS_PER_SEC;
 
@@ -163,7 +162,7 @@ main (void)
 $ make
 $ gcc -Wall -Wextra -Werror -O3 http_parser.o bench.c -o bench
 $ bench
-Elapsed 0.289766 seconds.
+Elapsed 0.284098 seconds.
 ```
 
 ## Author

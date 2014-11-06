@@ -35,7 +35,8 @@
            :+state-first-line+
            :+state-headers+
            :+state-chunk-size+
-           :+state-body+))
+           :+state-body+
+           :+state-trailing-headers+))
 (in-package :fast-http.http)
 
 ;;
@@ -50,6 +51,7 @@
 (defconstant +state-headers+ 1)
 (defconstant +state-chunk-size+ 2)
 (defconstant +state-body+ 3)
+(defconstant +state-trailing-headers+ 4)
 
 (defstruct (http (:conc-name :http-))
   (method nil :type symbol)
