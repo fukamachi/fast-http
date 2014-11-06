@@ -13,6 +13,7 @@
 
            :http-major-version
            :http-minor-version
+           :http-version
            :http-method
            :http-status
            :http-content-length
@@ -65,6 +66,11 @@
   (header-read 0 :type fixnum)
   (mark -1 :type fixnum)
   (state +state-first-line+ :type fixnum))
+
+(defun http-version (http)
+  (float
+   (+ (http-major-version http)
+      (/ (http-minor-version http) 10))))
 
 (defstruct (http-request (:include http)
                          (:conc-name :http-))

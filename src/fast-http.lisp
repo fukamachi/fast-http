@@ -27,6 +27,7 @@
            :http-request-p
            :http-response-p
            :make-callbacks
+           :http-version
            :http-major-version
            :http-minor-version
            :http-method
