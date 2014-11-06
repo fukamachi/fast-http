@@ -137,6 +137,10 @@
                                  header-value))))))))
       (setq callbacks
             (make-callbacks
+             :message-begin (lambda (http)
+                              (declare (ignore http))
+                              (setq header-complete-p nil
+                                    completedp nil))
              :url (lambda (http data start end)
                     (declare (type simple-byte-vector data)
                              (type pointer start end))
