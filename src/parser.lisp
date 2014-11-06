@@ -157,13 +157,13 @@ us a never-ending header that the application keeps buffering.")
 
 (defmacro expect-string (string &optional (error ''expect-failed) (advance T) (case-sensitive T))
   (if advance
-      `(progn
-         ,@(loop for char across string
-                 collect `(expect-char ,char ,error ,advance ,case-sensitive)))
+      `(,(if error 'progn 'and)
+        ,@(loop for char across string
+                collect `(expect-char ,char ,error ,advance ,case-sensitive)))
       (when (/= 0 (length string))
-        `(progn
-           (expect-char ,(aref string 0) ,error nil ,case-sensitive)
-           (expect-string ,(subseq string 1) ,error T ,case-sensitive)))))
+        `(,(if error 'progn 'and)
+          (expect-char ,(aref string 0) ,error nil ,case-sensitive)
+          (expect-string ,(subseq string 1) ,error T ,case-sensitive)))))
 
 (defmacro expect-crlf (&optional (error ''expect-failed))
   `(casev= byte
