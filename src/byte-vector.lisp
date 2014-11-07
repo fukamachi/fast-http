@@ -19,6 +19,7 @@
            :alpha-byte-char-to-lower-char
            :alphanumeric-byte-char-p
            :mark-byte-char-p
+           :ascii-octets-to-string
            :ascii-octets-to-lower-string
            :append-byte-vectors))
 (in-package :fast-http.byte-vector)
@@ -98,6 +99,21 @@
   (if (<= #.(char-code #\A) x #.(char-code #\Z))
       (- x #.(- (char-code #\A) (char-code #\a)))
       x))
+
+(declaim (inline ascii-octets-to-string))
+(defun ascii-octets-to-string (octets &key (start 0) (end (length octets)))
+  (declare (type simple-byte-vector octets)
+           (type (unsigned-byte 64) start end)
+           (optimize (speed 3) (safety 0)))
+  (let* ((len (the (unsigned-byte 64) (- end start)))
+         (string (make-string len :element-type 'character)))
+    (declare (type (unsigned-byte 64) len)
+             (type simple-string string))
+    (do ((i 0 (1+ i))
+         (j start (1+ j)))
+        ((= j end) string)
+      (setf (aref string i)
+            (code-char (aref octets j))))))
 
 (declaim (inline ascii-octets-to-lower-string))
 (defun ascii-octets-to-lower-string (octets &key (start 0) (end (length octets)))

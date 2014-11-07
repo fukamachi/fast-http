@@ -17,8 +17,6 @@
   (:import-from :fast-http.util
                 :defun-careful
                 :number-string-p)
-  (:import-from :babel
-                :octets-to-string)
   (:export :make-parser
            :http-request
            :http-response
@@ -146,12 +144,12 @@
                     (declare (type simple-byte-vector data)
                              (type pointer start end))
                     (setf (http-resource http)
-                          (babel:octets-to-string data :start start :end end)))
+                          (ascii-octets-to-string data :start start :end end)))
              :status (lambda (http data start end)
                        (declare (type simple-byte-vector data)
                                 (type pointer start end))
                        (setf (http-status-text http)
-                             (babel:octets-to-string data :start start :end end)))
+                             (ascii-octets-to-string data :start start :end end)))
              :first-line (and first-line-callback
                               (lambda (http)
                                 (declare (ignore http))
