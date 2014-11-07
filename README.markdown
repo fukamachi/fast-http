@@ -46,17 +46,17 @@ Base structure class extended by `http-request` and `http-response`.
 ```common-lisp
 (make-http)
 ;=> #S(FAST-HTTP.HTTP:HTTP
-      :METHOD NIL
-      :MAJOR-VERSION 0
-      :MINOR-VERSION 9
-      :STATUS 0
-      :CONTENT-LENGTH NIL
-      :CHUNKED-P NIL
-      :UPGRADE-P NIL
-      :HEADERS NIL
-      :HEADER-READ 0
-      :MARK -1
-      :STATE 0)
+;     :METHOD NIL
+;     :MAJOR-VERSION 0
+;     :MINOR-VERSION 9
+;     :STATUS 0
+;     :CONTENT-LENGTH NIL
+;     :CHUNKED-P NIL
+;     :UPGRADE-P NIL
+;     :HEADERS NIL
+;     :HEADER-READ 0
+;     :MARK -1
+;     :STATE 0)
 ```
 
 #### Methods
