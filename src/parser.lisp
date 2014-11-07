@@ -32,9 +32,7 @@
            :eof
 
            ;; Types
-           :pointer
-
-           :make-parser))
+           :pointer))
 (in-package :fast-http.parser)
 
 ;;
