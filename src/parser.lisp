@@ -776,6 +776,14 @@ us a never-ending header that the application keeps buffering.")
        (callback-notify :headers-complete http callbacks)
        (setf (http-header-read http) 0)
 
+       (unless (http-content-length http)
+         (callback-notify :message-complete http callbacks)
+         (setf (http-state http) +state-first-line+)
+         (unless (= p end)
+           (setq byte (aref data p))
+           (go first-line))
+         (return-from parse-request p))
+
        ;; Exit, the rest of the connect is in a different protocol.
        (when (http-upgrade-p http)
          (setf (http-state http) +state-first-line+)
