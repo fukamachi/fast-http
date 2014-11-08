@@ -110,7 +110,7 @@
                     (http-request #'parse-request)
                     (http-response #'parse-response)))
 
-        (headers (make-hash-table :test 'equal))
+        (headers nil)
 
         (header-value-buffer nil)
         parsing-header-field
@@ -138,7 +138,8 @@
             (make-callbacks
              :message-begin (lambda (http)
                               (declare (ignore http))
-                              (setq header-complete-p nil
+                              (setq headers (make-hash-table :test 'equal)
+                                    header-complete-p nil
                                     completedp nil))
              :url (lambda (http data start end)
                     (declare (type simple-byte-vector data)
