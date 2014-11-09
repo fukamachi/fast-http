@@ -709,6 +709,29 @@
       :body "")
     "line folding in header value")
 
+(let ((http (make-http)))
+  (parse-request http (make-callbacks)
+                 (bv (str #?"POST / HTTP/1.1\r\n"
+                          #?"Host: localhost:4242\r\n"
+                          #?"User-Agent: Drakma/1.3.9 (SBCL 1.2.5; Darwin; 13.4.0; http://weitz.de/drakma/)\r\n"
+                          #?"Accept: */*\r\n"
+                          #?"Connection: close\r\n"
+                          #?"Content-Type: multipart/form-data; boundary=----------6K3VbKXWtcya1TvQGlecdvbuB2x32I2jeasiKt8u7reHBln6i0\r\n"
+                          #?"Transfer-Encoding: chunked\r\n"
+                          #?"\r\n")))
+  (parse-request http (make-callbacks)
+                 (bv (str #?"FB\r\n"
+                          #?"------------6K3VbKXWtcya1TvQGlecdvbuB2x32I2jeasiKt8u7reHBln6i0\r\n"
+                          #?"Content-Disposition: form-data; name=\"file\"; filename=\"file.txt\"\r\n"
+                          #?"Content-Type: plain/text\r\n"
+                          #?"\r\n"
+                          #?"This is a text for test.\n"
+                          #?"\r\n"
+                          #?"------------6K3VbKXWtcya1TvQGlecdvbuB2x32I2jeasiKt8u7reHBln6i0--\r\n"
+                          #?"\r\n"
+                          #?"0\r\n"
+                          #?"\r\n"))))
+
 
 ;;
 ;; Response

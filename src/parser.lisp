@@ -662,6 +662,10 @@ us a never-ending header that the application keeps buffering.")
   (declare (type http http)
            (type simple-byte-vector data)
            (type pointer start end))
+
+  (when (= start end)
+    (return-from parse-chunked-body start))
+
   (let* ((p start)
          (byte (aref data p)))
     (declare (type pointer p)
