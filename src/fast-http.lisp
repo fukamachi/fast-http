@@ -192,6 +192,8 @@
              :message-complete (lambda (http)
                                  (declare (ignore http))
                                  (collect-prev-header-value)
+                                 (when finish-callback
+                                   (funcall (the function finish-callback)))
                                  (setq completedp t)))))
 
     (lambda (data &key (start 0) end)
@@ -219,9 +221,7 @@
                                     (http-mark http))
                                  :element-type '(unsigned-byte 8)
                                  :displaced-to data
-                                 :displaced-index-offset (http-mark http)))))
-           (when (and completedp finish-callback)
-             (funcall (the function finish-callback))))))
+                                 :displaced-index-offset (http-mark http))))))))
       (values http header-complete-p completedp))))
 
 (defun find-boundary (content-type)
