@@ -825,6 +825,7 @@ us a never-ending header that the application keeps buffering.")
            (T (error 'invalid-internal-state))))
 
      first-line
+       (setf (http-mark http) p)
        (callback-notify :message-begin http callbacks)
 
        (multiple-value-bind (major minor next)
