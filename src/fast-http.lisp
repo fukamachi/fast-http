@@ -208,7 +208,7 @@
            (when data-buffer
              (setq data
                    (coerce-to-sequence
-                    (xnconc (xsubseq (the simple-byte-vector data-buffer) 0)
+                    (xnconc (xsubseq data-buffer 0)
                             (xsubseq (the simple-byte-vector data) start (or end (length data))))))
              (setq data-buffer nil))
            (handler-case
