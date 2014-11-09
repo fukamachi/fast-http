@@ -26,8 +26,9 @@ The API is quite similar to [http-parse](https://github.com/orthecreedence/http-
 * `http`, `http-request` and `http-response` are structure classes, not standard classes.
 * `http` doesn't have `:force-stream` option. (always streaming)
 * `http` doesn't have `:store-body` option because it can consume much memory.
-* `body-callback` for `make-parser` and `make-multipart-parser` doesn't take a flag `body-complete-p`.
+* `body-callback` for `make-parser` doesn't take a flag `body-complete-p`.
   * Use `finish-callback` to know if the parsing is finished.
+* `body-callback` for `make-parser` takes pointers `start` and `end`.
 * `multipart-callback` for `make-parser` has been deleted.
   * Use `make-multipart-parser` and `body-callback` by yourself.
 * `:callback` of `make-multipart-parser` takes a stream, not a body octet vector at the 4th argument.
@@ -129,8 +130,8 @@ Makes a parser closure and returns it.
 (let ((http (make-http-request)))
   (make-parser http
                :body-callback
-               (lambda (data)
-                 (write-to-buffer data))
+               (lambda (data start end)
+                 (write-to-buffer data start end))
                :finish-callback
                (lambda ()
                  (handle-response http))))

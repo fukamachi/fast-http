@@ -25,8 +25,8 @@
                                 (:request (make-http-request))
                                 (:response (make-http-response)))
                               :header-callback (lambda (h) (setf got-headers h))
-                              :body-callback (lambda (b)
-                                               (push b got-body))
+                              :body-callback (lambda (b start end)
+                                               (push (subseq b start end) got-body))
                               :finish-callback (lambda () (setf finishedp t)))))
     (subtest description
       (loop for i from 1

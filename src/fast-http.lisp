@@ -185,10 +185,7 @@
                                    (type simple-byte-vector data)
                                    (type pointer start end))
                           (funcall (the function body-callback)
-                                   (make-array (- end start)
-                                               :element-type '(unsigned-byte 8)
-                                               :displaced-to data
-                                               :displaced-index-offset start))))
+                                   data start end)))
              :message-complete (lambda (http)
                                  (declare (ignore http))
                                  (collect-prev-header-value)
