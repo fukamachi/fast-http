@@ -692,12 +692,14 @@ us a never-ending header that the application keeps buffering.")
           ;; trailing headers
           (setf (http-state http) +state-trailing-headers+))
          (T
-          (advance-to (read-body-data http callbacks data p end))
-          (expect-crlf)
-          (advance)
-          (setf (http-mark http) p)
-          (setf (http-state http) +state-chunk-size+)
-          (go chunk-size)))
+          (let ((next (read-body-data http callbacks data p end)))
+            (declare (type pointer next))
+            (setf (http-mark http) next)
+            (advance-to next)
+            (expect-crlf)
+            (advance)
+            (setf (http-state http) +state-chunk-size+)
+            (go chunk-size))))
 
      trailing-headers
        (return-from parse-chunked-body
