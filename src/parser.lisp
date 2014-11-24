@@ -571,11 +571,13 @@ us a never-ending header that the application keeps buffering.")
           (declare (dynamic-extent body-end))
           (setf (http-content-length http) 0)
           (callback-data :body http callbacks data start body-end)
+          (setf (http-mark http) body-end)
           (values body-end t))
         ;; still needs to read
         (progn
           (decf (http-content-length http) readable-count)
           (callback-data :body http callbacks data start end)
+          (setf (http-mark http) end)
           (values end nil)))))
 
 (defun-speedy http-message-needs-eof-p (http)
@@ -692,14 +694,11 @@ us a never-ending header that the application keeps buffering.")
           ;; trailing headers
           (setf (http-state http) +state-trailing-headers+))
          (T
-          (let ((next (read-body-data http callbacks data p end)))
-            (declare (type pointer next))
-            (setf (http-mark http) next)
-            (advance-to next)
-            (expect-crlf)
-            (advance)
-            (setf (http-state http) +state-chunk-size+)
-            (go chunk-size))))
+          (advance-to (read-body-data http callbacks data p end))
+          (expect-crlf)
+          (advance)
+          (setf (http-state http) +state-chunk-size+)
+          (go chunk-size)))
 
      trailing-headers
        (return-from parse-chunked-body
