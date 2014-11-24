@@ -209,7 +209,8 @@
                    (coerce-to-sequence
                     (xnconc (xsubseq data-buffer 0)
                             (xsubseq (the simple-byte-vector data) start (or end (length data))))))
-             (setq data-buffer nil))
+             (setq data-buffer nil
+                   start 0))
            (handler-case
                (funcall parse-fn http callbacks (the simple-byte-vector data) :start start :end end)
              (eof ()
