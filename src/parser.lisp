@@ -99,10 +99,11 @@ us a never-ending header that the application keeps buffering.")
   `(when (= p end)
      (error 'eof)))
 
-(defmacro advance (&optional (degree 1))
+(defmacro advance (&key (if-eof '(error 'eof)))
   `(progn
-     (incf p ,degree)
-     (check-eof)
+     (incf p)
+     (when (= p end)
+       ,if-eof)
      (setq byte (aref data p))))
 
 (defmacro advance-to (to)
@@ -642,8 +643,8 @@ us a never-ending header that the application keeps buffering.")
        (cond
          ((= byte +cr+)
           (expect-byte +lf+)
-          (advance)
-          (return))
+          (advance :if-eof (return t))
+          (return nil))
          (T
           (setq unhex-val (unhex-byte byte))
           (cond
@@ -652,8 +653,8 @@ us a never-ending header that the application keeps buffering.")
                ((#\; #\Space)
                 ;; skipping chunk parameters
                 (skip-until-crlf)
-                (advance)
-                (return))
+                (advance :if-eof (return t))
+                (return nil))
                (otherwise
                 (error 'invalid-chunk-size))))
             (T
@@ -684,9 +685,11 @@ us a never-ending header that the application keeps buffering.")
          (T (error 'invalid-internal-state)))
 
      chunk-size
-       (parse-chunked-size)
-       (setf (http-mark http) p)
-       (setf (http-state http) +state-body+)
+       (let ((eofp (parse-chunked-size)))
+         (setf (http-state http) +state-body+)
+         (if eofp
+             (return-from parse-chunked-body p)
+             (setf (http-mark http) p)))
 
      body
        (cond
@@ -695,9 +698,10 @@ us a never-ending header that the application keeps buffering.")
           (setf (http-state http) +state-trailing-headers+))
          (T
           (advance-to (read-body-data http callbacks data p end))
-          (expect-crlf)
-          (advance)
           (setf (http-state http) +state-chunk-size+)
+          (expect-crlf)
+          (advance :if-eof (return-from parse-chunked-body p))
+          (setf (http-mark http) p)
           (go chunk-size)))
 
      trailing-headers
@@ -736,9 +740,7 @@ us a never-ending header that the application keeps buffering.")
        ;; skip first empty line (some clients add CRLF after POST content)
        (when (= byte +cr+)
          (expect-byte +lf+)
-         (handler-case (advance)
-           (eof ()
-             (return-from parse-request p))))
+         (advance :if-eof (return-from parse-request p)))
 
        (setf (http-mark http) p)
        (callback-notify :message-begin http callbacks)

@@ -483,4 +483,38 @@
                       #?"</SOAP-ENV:Envelope>"))
              "no Content-Length response")
 
+(let* ((response #?"HTTP/1.1 200 OK\r
+Server: Wookie (0.3.11)\r
+Transfer-Encoding: chunked\r
+\r
+7\r
+hello, \r
+4\r
+how \r
+4\r
+are \r
+4\r
+you?\r
+0\r
+\r
+")
+       (http (fast-http:make-http-response))
+       (parser (fast-http:make-parser http
+                 :body-callback
+                   (lambda (chunk start end)
+                     (format t "chunk: ~a~%" (babel:octets-to-string (subseq chunk start end))))
+                 :finish-callback
+                   (lambda ()
+                     (format t "finish.~%"))))
+       (header-chunk (subseq response 0 72))    ; <headers>
+       (chunk1 (subseq response 72 84))   ; "hello, "
+       (chunk2 (subseq response 84 102))  ; "how are "
+       (chunk3 (subseq response 102))     ; "you?"
+       (do-parse (lambda (chunk)
+                   (funcall parser (babel:string-to-octets chunk)))))
+  (funcall do-parse header-chunk)
+  (is-print (funcall do-parse chunk1) #?"chunk: hello, \n" "chunk1")
+  (is-print (funcall do-parse chunk2) #?"chunk: how \nchunk: are \n" "chunk2")
+  (is-print (funcall do-parse chunk3) #?"chunk: you?\nfinish.\n" "chunk3 and finish"))
+
 (finalize)
