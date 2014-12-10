@@ -483,7 +483,8 @@
                       #?"</SOAP-ENV:Envelope>"))
              "no Content-Length response")
 
-(let* ((response #?"HTTP/1.1 200 OK\r
+(defparameter *response*
+  #?"HTTP/1.1 200 OK\r
 Server: Wookie (0.3.11)\r
 Transfer-Encoding: chunked\r
 \r
@@ -498,23 +499,62 @@ you?\r
 0\r
 \r
 ")
-       (http (fast-http:make-http-response))
-       (parser (fast-http:make-parser http
-                 :body-callback
-                   (lambda (chunk start end)
-                     (format t "chunk: ~a~%" (babel:octets-to-string (subseq chunk start end))))
-                 :finish-callback
-                   (lambda ()
-                     (format t "finish.~%"))))
-       (header-chunk (subseq response 0 72))    ; <headers>
-       (chunk1 (subseq response 72 84))   ; "hello, "
-       (chunk2 (subseq response 84 102))  ; "how are "
-       (chunk3 (subseq response 102))     ; "you?"
-       (do-parse (lambda (chunk)
-                   (funcall parser (babel:string-to-octets chunk)))))
-  (funcall do-parse header-chunk)
-  (is-print (funcall do-parse chunk1) #?"chunk: hello, \n" "chunk1")
-  (is-print (funcall do-parse chunk2) #?"chunk: how \nchunk: are \n" "chunk2")
-  (is-print (funcall do-parse chunk3) #?"chunk: you?\nfinish.\n" "chunk3 and finish"))
+
+(subtest "chunk body"
+  (let* ((http (fast-http:make-http-response))
+         (parser (fast-http:make-parser http
+                                        :body-callback
+                                        (lambda (chunk start end)
+                                          (format t "chunk: ~a~%" (babel:octets-to-string (subseq chunk start end))))
+                                        :finish-callback
+                                        (lambda ()
+                                          (format t "finish.~%"))))
+         (header-chunk (subseq *response* 0 72))    ; <headers>
+         (chunk1 (subseq *response* 72 84))   ; "hello, "
+         (chunk2 (subseq *response* 84 102))  ; "how are "
+         (chunk3 (subseq *response* 102))     ; "you?"
+         (do-parse (lambda (chunk)
+                     (funcall parser (babel:string-to-octets chunk)))))
+    (funcall do-parse header-chunk)
+    (is-print (funcall do-parse chunk1) #?"chunk: hello, \n" "chunk1")
+    (is-print (funcall do-parse chunk2) #?"chunk: how \nchunk: are \n" "chunk2")
+    (is-print (funcall do-parse chunk3) #?"chunk: you?\nfinish.\n" "chunk3 and finish")))
+
+(subtest "chunk body"
+  (let* ((http (fast-http:make-http-response))
+         (parser (fast-http:make-parser http
+                                        :body-callback
+                                        (lambda (chunk start end)
+                                          (format t "chunk: ~a~%" (babel:octets-to-string (subseq chunk start end))))
+                                        :finish-callback
+                                        (lambda ()
+                                          (format t "finish.~%"))))
+         (chunk01 (subseq *response* 0 17))
+         (chunk02 (subseq *response* 17 72))
+         (chunk03 (subseq *response* 72 73))
+         (chunk04 (subseq *response* 73 84))
+         (chunk05 (subseq *response* 84 85))
+         (chunk06 (subseq *response* 85 87))
+         (chunk07 (subseq *response* 87 91))
+         (chunk08 (subseq *response* 91 93))
+         (chunk09 (subseq *response* 93 101))
+         (chunk10 (subseq *response* 101 103))
+         (chunk11 (subseq *response* 103))
+         (do-parse (lambda (chunk)
+                     (funcall parser (babel:string-to-octets chunk)))))
+    ;; first line
+    (funcall do-parse chunk01)
+    ;; headers
+    (funcall do-parse chunk02)
+
+    (is-print (funcall do-parse chunk03) "")
+    (is-print (funcall do-parse chunk04) #?"chunk: hello, \n")
+    (is-print (funcall do-parse chunk05) "")
+    (is-print (funcall do-parse chunk06) "")
+    (is-print (funcall do-parse chunk07) #?"chunk: how \n")
+    (is-print (funcall do-parse chunk08) "")
+    (is-print (funcall do-parse chunk09) #?"chunk: are \n")
+    (is-print (funcall do-parse chunk10) "")
+    (is-print (funcall do-parse chunk11) #?"chunk: you?\nfinish.\n")))
 
 (finalize)
