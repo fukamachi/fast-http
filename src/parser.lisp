@@ -700,8 +700,11 @@ us a never-ending header that the application keeps buffering.")
           (setf (http-state http) +state-trailing-headers+)
           (go trailing-headers))
          (T
-          (let ((next (read-body-data http callbacks data p end)))
+          (multiple-value-bind (next completedp)
+              (read-body-data http callbacks data p end)
             (declare (type pointer next))
+            (unless completedp
+              (return-from parse-chunked-body p))
             (setf (http-state http) +state-chunk-body-end-crlf+)
             (advance-to next))))
 
