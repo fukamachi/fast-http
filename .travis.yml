@@ -17,3 +17,6 @@ script:
                    (uiop:quit -1)))'
        -e '(ql:quickload (list :cl-interpol :cl-syntax :fast-http))'
        -e '(asdf:test-system :fast-http)'
+       -e '(let ((test-results (asdf:find-system :fast-http-test)))
+             (or test-results
+                 (uiop:quit -1)))'
