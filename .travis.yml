@@ -15,5 +15,6 @@ script:
                  (lambda (c h)
                    (declare (ignore c h))
                    (uiop:quit -1)))'
+       -e '(ql:quickload :cl-syntax)'
        -e '(ql:quickload :fast-http)'
        -e '(asdf:test-system :fast-http)'
