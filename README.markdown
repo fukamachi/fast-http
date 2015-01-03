@@ -1,5 +1,7 @@
 # fast-http
 
+[![Build Status](https://travis-ci.org/fukamachi/fast-http.svg?branch=master)](https://travis-ci.org/fukamachi/fast-http)
+
 This is a fast HTTP request/response protocol parser for Common Lisp.
 
 ## How fast?
