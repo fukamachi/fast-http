@@ -210,16 +210,13 @@
                     (xnconc (xsubseq data-buffer 0)
                             (xsubseq (the simple-byte-vector data) start (or end (length data))))))
              (setq data-buffer nil
-                   start 0))
+                   start 0
+                   end nil))
            (handler-case
                (funcall parse-fn http callbacks (the simple-byte-vector data) :start start :end end)
              (eof ()
                (setq data-buffer
-                     (make-array (- (or end (length data))
-                                    (http-mark http))
-                                 :element-type '(unsigned-byte 8)
-                                 :displaced-to data
-                                 :displaced-index-offset (http-mark http))))))))
+                     (subseq data (http-mark http) (or end (length data)))))))))
       (values http header-complete-p completedp))))
 
 (defun find-boundary (content-type)
