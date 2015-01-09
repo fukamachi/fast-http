@@ -15,14 +15,5 @@ install:
   - curl https://raw.githubusercontent.com/luismbo/cl-travis/master/install.sh | bash
 
 script:
-  - cl -e '(ql:quickload :prove)'
-       -e '(setf prove:*debug-on-error* t)'
-       -e '(setf *debugger-hook*
-                 (lambda (c h)
-                   (declare (ignore c h))
-                   (uiop:quit -1)))'
-       -e '(ql:quickload (list :cl-interpol :cl-syntax :fast-http))'
-       -e '(asdf:test-system :fast-http)'
-       -e '(let ((test-results (asdf:find-system :fast-http-test)))
-             (or test-results
-                 (uiop:quit -1)))'
+  - cl -l prove
+       -e '(or (prove:run :fast-http-test) (uiop:quit -1))'
