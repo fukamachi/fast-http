@@ -19,6 +19,7 @@
                :cl-utilities
                :babel
                :xsubseq
+               #+fast-http-debug
                :log4cl
 
                ;; for body-buffer
