@@ -557,4 +557,38 @@ you?\r
     (is-print (funcall do-parse chunk10) "")
     (is-print (funcall do-parse chunk11) #?"chunk: you?\nfinish.\n")))
 
+;; Take from http://www.sonosite.com/
+;; https://github.com/fukamachi/fast-http/pull/15
+(is-response (str #?"HTTP/1.1 200 OK\r\n"
+                 #?"Set-Cookie: SESS99110bddbcd18a012d19509db399dc05=9hubdaihrslaka5ci69novcl55; expires=Fri, 30-Jan-2015 08:43:59 GMT; path=/; domain=.sonosite.com\r\n"
+                 #?"Last-Modified: Fri, 30 Jan 2015 05:35:20 GMT\r\n"
+                 #?"ETag: \"d7b7d261ac63a34d416e6cbefc5b6e3f\"\r\n"
+                 #?"Expires: Sun, 19 Nov 1978 05:00:00 GMT\r\n"
+                 #?"Content-Type: text/html; charset=utf-8\r\n"
+                 #?"Server: Go Away\r\n"
+                 #?"Age: 0\r\n"
+                 #?"Cache-Control: must-revalidate\r\n"
+                 #?"X-Yottaa-Optimizations: ob/0 si/1215743397 tts/1416857618979 ti/52d77c618b5f02370e0119d9 ai/50e5c1b84707e60c8000021f\r\n"
+                 #?"Transfer-Encoding: chunked\r\n"
+                 #?"Date: Fri, 30 Jan 2015 05:43:59 GMT\r\n"
+                 #?"Age: 0\r\n"
+                 #?"Connection: keep-alive\r\n"
+                 #?"X-Yottaa-Metrics: 042136fb801b/[427,231,-] 041136fba428/[-,429.246]\r\n"
+                 #?"\r\n")
+            '(:set-cookie "SESS99110bddbcd18a012d19509db399dc05=9hubdaihrslaka5ci69novcl55; expires=Fri, 30-Jan-2015 08:43:59 GMT; path=/; domain=.sonosite.com"
+              :last-modified "Fri, 30 Jan 2015 05:35:20 GMT"
+              :etag "\"d7b7d261ac63a34d416e6cbefc5b6e3f\""
+              :expires "Sun, 19 Nov 1978 05:00:00 GMT"
+              :content-type "text/html; charset=utf-8"
+              :server "Go Away"
+              :age "0, 0"
+              :cache-control "must-revalidate"
+              :x-yottaa-optimizations "ob/0 si/1215743397 tts/1416857618979 ti/52d77c618b5f02370e0119d9 ai/50e5c1b84707e60c8000021f"
+              :transfer-encoding "chunked"
+              :date "Fri, 30 Jan 2015 05:43:59 GMT"
+              :connection "keep-alive"
+              :x-yottaa-metrics "042136fb801b/[427,231,-] 041136fba428/[-,429.246]")
+            nil
+            "multiple number headers")
+
 (finalize)
