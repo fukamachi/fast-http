@@ -129,7 +129,8 @@
                  (multiple-value-bind (previous-value existp)
                      (gethash (the simple-string parsing-header-field) headers)
                    (setf (gethash (the simple-string parsing-header-field) headers)
-                         (if existp
+                         (if (and existp
+                                  (simple-string-p previous-value))
                              (concatenate 'string (the simple-string previous-value) ", " header-value)
                              (if (number-string-p header-value)
                                  (read-from-string header-value)
