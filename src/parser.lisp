@@ -17,6 +17,7 @@
                 :casev=
                 :case-byte)
   (:import-from :alexandria
+                :format-symbol
                 :with-gensyms
                 :hash-table-alist
                 :define-constant
@@ -69,22 +70,22 @@ us a never-ending header that the application keeps buffering.")
 
 (defmacro callback-data (name http callbacks data start end)
   (with-gensyms (callback e)
-    `(when-let (,callback (,(intern (format nil "~A-~A" :callbacks name)) ,callbacks))
+    `(when-let (,callback (,(format-symbol t "~A-~A" :callbacks name) ,callbacks))
        (handler-bind ((error
                         (lambda (,e)
                           (unless (typep ,e 'fast-http-error)
-                            (error ',(intern (format nil "~A-~A" :cb name))
+                            (error ',(format-symbol t "~A-~A" :cb name)
                                    :error ,e)
                             (abort ,e)))))
          (funcall ,callback ,http ,data ,start ,end)))))
 
 (defmacro callback-notify (name http callbacks)
   (with-gensyms (callback e)
-    `(when-let (,callback (,(intern (format nil "~A-~A" :callbacks name)) ,callbacks))
+    `(when-let (,callback (,(format-symbol t "~A-~A" :callbacks name) ,callbacks))
        (handler-bind ((error
                         (lambda (,e)
                           (unless (typep ,e 'fast-http-error)
-                            (error ',(intern (format nil "~A-~A" :cb name))
+                            (error ',(format-symbol t "~A-~A" :cb name)
                                    :error ,e)
                             (abort ,e)))))
          (funcall ,callback ,http)))))
