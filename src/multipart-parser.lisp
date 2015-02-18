@@ -21,6 +21,7 @@
   (:import-from :babel
                 :string-to-octets)
   (:import-from :alexandria
+                :format-symbol
                 :when-let)
   (:export :ll-multipart-parser
            :ll-multipart-parser-state
@@ -58,7 +59,7 @@
                             maybe-delimiter-second-dash
                             body-almost-done
                             body-done)
-             collect `(defconstant ,(intern (format nil "+~A+" state)) ,i)))
+             collect `(defconstant ,(format-symbol t "+~A+" state) ,i)))
 
 (defun http-multipart-parse (parser callbacks data &key (start 0) end)
   (declare (type simple-byte-vector data))
