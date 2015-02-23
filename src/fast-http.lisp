@@ -35,6 +35,7 @@
            :http-content-length
            :http-chunked-p
            :http-upgrade-p
+           :http-headers
 
            ;; multipart parser
            :make-multipart-parser
