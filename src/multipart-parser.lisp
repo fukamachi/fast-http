@@ -223,10 +223,6 @@
                 (casev byte
                   (+cr+ (setf (ll-multipart-parser-boundary-mark parser) p)
                         (go-state +maybe-delimiter-start+))
-                  ;; they might be just sending \n instead of \r\n so this would be
-                  ;; the second \n to denote the end of line
-                  (+lf+ (setf (ll-multipart-parser-boundary-mark parser) p)
-                        (go-state +maybe-delimiter-start+ 0))
                   (otherwise (go-state +looking-for-delimiter+))))
 
                (+maybe-delimiter-start+
