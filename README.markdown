@@ -72,7 +72,7 @@ Base structure class extended by `http-request` and `http-response`.
 - `http-content-length`: Returns a value of `Content-Length` header in an integer. If the header doesn't exist, it returns `NIL`.
 - `http-chunked-p`: Returns `T` if the value of `Transfer-Encoding` header is `chunked`. If the header doesn't exist, it returns `NIL`.
 - `http-upgrade-p`: Returns `T` if `Upgrade` header exists.
-- `http-headers`: Returns a hash-table which represents HTTP headers. Note all hash keys are lower-case. (`Content-Length` -> `"content-length"`).
+- `http-headers`: Returns a hash-table which represents HTTP headers. Note all hash keys are lower-cased and all values are string except `Set-Cookie` header, whose value is a list of strings. (`Content-Length` -> `"content-length"`).
 
 ### \[Structure] http-request (extends http)
 

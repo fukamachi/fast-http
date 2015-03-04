@@ -576,19 +576,19 @@ you?\r
                  #?"X-Yottaa-Metrics: 042136fb801b/[427,231,-] 041136fba428/[-,429.246]\r\n"
                  #?"\r\n"
                  #?"0\r\n\r\n")
-            '(:set-cookie "SESS99110bddbcd18a012d19509db399dc05=9hubdaihrslaka5ci69novcl55; expires=Fri, 30-Jan-2015 08:43:59 GMT; path=/; domain=.sonosite.com"
-              :last-modified "Fri, 30 Jan 2015 05:35:20 GMT"
-              :etag "\"d7b7d261ac63a34d416e6cbefc5b6e3f\""
-              :expires "Sun, 19 Nov 1978 05:00:00 GMT"
-              :content-type "text/html; charset=utf-8"
-              :server "Go Away"
-              :age "0, 0"
-              :cache-control "must-revalidate"
-              :x-yottaa-optimizations "ob/0 si/1215743397 tts/1416857618979 ti/52d77c618b5f02370e0119d9 ai/50e5c1b84707e60c8000021f"
-              :transfer-encoding "chunked"
-              :date "Fri, 30 Jan 2015 05:43:59 GMT"
-              :connection "keep-alive"
-              :x-yottaa-metrics "042136fb801b/[427,231,-] 041136fba428/[-,429.246]")
+             '(:set-cookie ("SESS99110bddbcd18a012d19509db399dc05=9hubdaihrslaka5ci69novcl55; expires=Fri, 30-Jan-2015 08:43:59 GMT; path=/; domain=.sonosite.com")
+               :last-modified "Fri, 30 Jan 2015 05:35:20 GMT"
+               :etag "\"d7b7d261ac63a34d416e6cbefc5b6e3f\""
+               :expires "Sun, 19 Nov 1978 05:00:00 GMT"
+               :content-type "text/html; charset=utf-8"
+               :server "Go Away"
+               :age "0, 0"
+               :cache-control "must-revalidate"
+               :x-yottaa-optimizations "ob/0 si/1215743397 tts/1416857618979 ti/52d77c618b5f02370e0119d9 ai/50e5c1b84707e60c8000021f"
+               :transfer-encoding "chunked"
+               :date "Fri, 30 Jan 2015 05:43:59 GMT"
+               :connection "keep-alive"
+               :x-yottaa-metrics "042136fb801b/[427,231,-] 041136fba428/[-,429.246]")
             nil
             "multiple number headers")
 

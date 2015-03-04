@@ -127,16 +127,18 @@
                           (the (or octets-concatenated-xsubseqs
                                    octets-xsubseq)
                                header-value-buffer)))))
-                 (multiple-value-bind (previous-value existp)
-                     (gethash (the simple-string parsing-header-field) headers)
-                   (setf (gethash (the simple-string parsing-header-field) headers)
-                         (if existp
-                             (if (simple-string-p previous-value)
-                                 (concatenate 'string (the simple-string previous-value) ", " header-value)
-                                 (format nil "~A, ~A" previous-value header-value))
-                             (if (number-string-p header-value)
-                                 (read-from-string header-value)
-                                 header-value))))))))
+                 (if (string= parsing-header-field "set-cookie")
+                     (push header-value (gethash "set-cookie" headers))
+                     (multiple-value-bind (previous-value existp)
+                         (gethash (the simple-string parsing-header-field) headers)
+                       (setf (gethash (the simple-string parsing-header-field) headers)
+                             (if existp
+                                 (if (simple-string-p previous-value)
+                                     (concatenate 'string (the simple-string previous-value) ", " header-value)
+                                     (format nil "~A, ~A" previous-value header-value))
+                                 (if (number-string-p header-value)
+                                     (read-from-string header-value)
+                                     header-value)))))))))
       (setq callbacks
             (make-callbacks
              :message-begin (lambda (http)
@@ -175,6 +177,9 @@
              :headers-complete (lambda (http)
                                  (collect-prev-header-value)
                                  (setq header-value-buffer nil)
+                                 (when (gethash "set-cookie" headers)
+                                   (setf (gethash "set-cookie" headers)
+                                         (nreverse (gethash "set-cookie" headers))))
                                  (setf (http-headers http) headers)
                                  (when header-callback
                                    (funcall (the function header-callback) headers))
