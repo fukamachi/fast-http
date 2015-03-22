@@ -18,8 +18,6 @@
   (:import-from :fast-http.util
                 :tagcasev
                 :casev)
-  (:import-from :babel
-                :string-to-octets)
   (:import-from :alexandria
                 :format-symbol
                 :when-let)
@@ -64,7 +62,7 @@
 (defun http-multipart-parse (parser callbacks data &key (start 0) end)
   (declare (type simple-byte-vector data))
   (let* ((end (or end (length data)))
-         (boundary (babel:string-to-octets (ll-multipart-parser-boundary parser)))
+         (boundary (map '(simple-array (unsigned-byte 8) (*)) #'char-code (ll-multipart-parser-boundary parser)))
          (boundary-length (length boundary))
          (header-parser (ll-multipart-parser-header-parser parser)))
     (declare (type simple-byte-vector boundary))
