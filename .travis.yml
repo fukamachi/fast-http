@@ -11,6 +11,13 @@ install:
   # Install cl-travis
   - curl https://raw.githubusercontent.com/luismbo/cl-travis/master/install.sh | bash
 
+before_script:
+  - git clone https://github.com/joyent/http-parser ~/http-parser
+  - cp $TRAVIS_BUILD_DIR/benchmark/http-parser.c ~/http-parser/mybench.c
+  - cd ~/http-parser && make && gcc -Wall -Wextra -Werror -O3 http_parser.o mybench.c -o mybench
+
 script:
   - cl -l prove
        -e '(or (prove:run :fast-http-test) (uiop:quit -1))'
+  - cl -l fast-http-test -e '(fast-http-test.benchmark:run-ll-benchmark)'
+  - ~/http-parser/mybench
