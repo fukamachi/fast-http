@@ -682,8 +682,6 @@ us a never-ending header that the application keeps buffering.")
                 (if (http-chunked-p http)
                     +state-chunk-size+
                     +state-body+))
-          (when (eofp)
-            (return-from parse-request end))
 
         body
           (if (http-chunked-p http)
@@ -748,9 +746,6 @@ us a never-ending header that the application keeps buffering.")
                 (if (http-chunked-p http)
                     +state-chunk-size+
                     +state-body+))
-
-          (when (eofp)
-            (return-from parse-response end))
 
         body
           (if (http-chunked-p http)
