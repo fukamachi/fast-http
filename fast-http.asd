@@ -17,6 +17,7 @@
   :license "MIT"
   :depends-on (:alexandria
                :cl-utilities
+               :proc-parse
                :xsubseq
                #+fast-http-debug
                :log4cl

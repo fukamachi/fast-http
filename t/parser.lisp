@@ -730,7 +730,14 @@
                           #?"------------6K3VbKXWtcya1TvQGlecdvbuB2x32I2jeasiKt8u7reHBln6i0--\r\n"
                           #?"\r\n"
                           #?"0\r\n"
-                          #?"\r\n"))))
+                          #?"\r\n")))
+  (is (list :method (http-method http)
+            :http-major (http-major-version http)
+            :http-minor (http-minor-version http))
+      (list :method :post
+            :http-major 1
+            :http-minor 1)
+      "Divide into two"))
 
 
 ;;
