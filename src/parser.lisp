@@ -94,6 +94,8 @@ us a never-ending header that the application keeps buffering.")
 
 (define-condition eof () ())
 
+(define-condition expect-failed (parsing-error) ())
+
 
 ;;
 ;; Tokens
@@ -193,19 +195,23 @@ us a never-ending header that the application keeps buffering.")
   (declare (type simple-byte-vector data)
            (type pointer start end))
   (let (major minor)
-    (with-octets-parsing (data :start start :end end)
-      (match "HTTP/")
-      (if (digit-byte-char-p (current))
-          (setq major (digit-byte-char-to-integer (current)))
-          (error "~S is not a digit" (code-char (current))))
-      (advance)
-      (skip #\.)
-      (if (digit-byte-char-p (current))
-          (setq minor (digit-byte-char-to-integer (current)))
-          (error "~S is not a digit" (code-char (current))))
-      (advance)
-      (return-from parse-http-version
-        (values major minor (pos))))
+    (handler-bind ((match-failed
+                     (lambda (e)
+                       (error 'expect-failed)
+                       (abort e))))
+      (with-octets-parsing (data :start start :end end)
+        (match "HTTP/")
+        (if (digit-byte-char-p (current))
+            (setq major (digit-byte-char-to-integer (current)))
+            (error "~S is not a digit" (code-char (current))))
+        (advance)
+        (skip #\.)
+        (if (digit-byte-char-p (current))
+            (setq minor (digit-byte-char-to-integer (current)))
+            (error "~S is not a digit" (code-char (current))))
+        (advance)
+        (return-from parse-http-version
+          (values major minor (pos)))))
     (error 'eof)))
 
 (defun-insane parse-status-code (http callbacks data start end)
@@ -226,7 +232,7 @@ us a never-ending header that the application keeps buffering.")
                (error 'invalid-status :status-code (http-status http))))
             ((= (current) +space+)
              ;; Reading the status text
-             (skip #\Space)
+             (advance)
              (let ((status-text-start (pos)))
                (skip* (not #\Return))
                (advance)
@@ -407,7 +413,7 @@ us a never-ending header that the application keeps buffering.")
          (error 'eof))
        (setq current (aref data start))
        (unless (= current +lf+)
-         (error 'match-failed))
+         (error 'expect-failed))
        (values (1+ start) t)))))
 
 (defun-speedy parse-headers (http callbacks data start end)
@@ -420,7 +426,7 @@ us a never-ending header that the application keeps buffering.")
           (advance)
           (if (= (current) +lf+)
               (return-from parse-headers (1+ (pos)))
-              (error 'match-failed)))
+              (error 'expect-failed)))
 
         (advance-to* (parse-header-field-and-value http callbacks data start end))
 
