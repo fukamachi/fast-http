@@ -213,40 +213,32 @@ Will be raised when the `data` ends in the middle of parsing.
 
 - Parsing an HTTP request header 100000 times.
 
-In this benchmark, fast-http is **5.6 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
+In this benchmark, fast-http is **2.6 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
 
 | http-parser (C) | fast-http |
 | ---------------:| ---------:|
-|      0.284s     |   0.050s  |
+|      0.190s     |   0.071s  |
 
 ### Environment
 
-* MacBook Pro OSX Mavericks (CPU: 3GHz Intel Core i7, Memory: 8GB)
-* SBCL 1.2.5
-* GCC version 6.0 (clang-600.0.51)
+* Travis CI
+* SBCL 1.2.6
+
+You can see the latest result at [Travis CI](https://travis-ci.org/fukamachi/fast-http).
 
 ### fast-http (Common Lisp)
 
 ```common-lisp
-(syntax:use-syntax :interpol)
-
-(defun run-benchmark ()
-  (let ((http (make-http-request))
-        (callbacks (make-callbacks))
-        (data (babel:string-to-octets #?"GET /cookies HTTP/1.1\r\nHost: 127.0.0.1:8090\r\nConnection: keep-alive\r\nCache-Control: max-age=0\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\nUser-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.56 Safari/537.17\r\nAccept-Encoding: gzip,deflate,sdch\r\nAccept-Language: en-US,en;q=0.8\r\nAccept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3\r\nCookie: name=wookie\r\n\r\n")))
-    (time
-     (loop repeat 100000 do
-       (parse-request http callbacks data)))))
-
-(run-benchmark)
+(ql:quickload :fast-http-test)
+(fast-http-test.benchmark:run-ll-benchmark)
 ```
 
 ```
 Evaluation took:
-  0.050 seconds of real time
-  0.050187 seconds of total run time (0.050089 user, 0.000098 system)
+  0.071 seconds of real time
+  0.070989 seconds of total run time (0.070989 user, 0.000000 system)
   100.00% CPU
-  151,546,149 processor cycles
+  164,576,191 processor cycles
   0 bytes consed
 ```
 
@@ -303,10 +295,10 @@ main (void)
 ```
 
 ```
-$ make
-$ gcc -Wall -Wextra -Werror -O3 http_parser.o bench.c -o bench
-$ bench
-Elapsed 0.284098 seconds.
+$ make http_parser.o
+$ gcc -Wall -Wextra -Werror -Wno-error=unused-but-set-variable -O3 http_parser.o mybench.c -o mybench
+$ mybench
+Elapsed 0.190000 seconds.
 ```
 
 ## Author
