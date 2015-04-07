@@ -4,16 +4,6 @@
 
 This is a fast HTTP request/response protocol parser for Common Lisp.
 
-## How fast?
-
-![Benchmark graph when parsing an HTTP request header 100000 times.](images/benchmark.png)
-
-- [http-parser](https://github.com/joyent/http-parser): An HTTP Parser for [Node.js](http://github.com/joyent/node)
-
-NOTE: @y2q-actionman pointed out Node.js's [http-parser](https://github.com/joyent/http-parser) is designed to use less memory. fast-http consumes more memory spaces than http-parser. (See [#8](https://github.com/fukamachi/fast-http/issues/8), the information is based on the old implementation, though)
-
-See [Benchmark](#benchmark) for the detail.
-
 ## Features
 
 * Parses both HTTP requests and responses.
@@ -213,11 +203,11 @@ Will be raised when the `data` ends in the middle of parsing.
 
 - Parsing an HTTP request header 100000 times.
 
-In this benchmark, fast-http is **2.6 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
+In this benchmark, fast-http is **1.08 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
 
 | http-parser (C) | fast-http |
 | ---------------:| ---------:|
-|      0.190s     |   0.071s  |
+|      0.150s     |   0.139s  |
 
 ### Environment
 
@@ -235,10 +225,10 @@ You can see the latest result at [Travis CI](https://travis-ci.org/fukamachi/fas
 
 ```
 Evaluation took:
-  0.071 seconds of real time
-  0.070989 seconds of total run time (0.070989 user, 0.000000 system)
-  100.00% CPU
-  164,576,191 processor cycles
+  0.139 seconds of real time
+  0.136979 seconds of total run time (0.135979 user, 0.001000 system)
+  98.56% CPU
+  318,734,187 processor cycles
   0 bytes consed
 ```
 
@@ -298,7 +288,7 @@ main (void)
 $ make http_parser.o
 $ gcc -Wall -Wextra -Werror -Wno-error=unused-but-set-variable -O3 http_parser.o mybench.c -o mybench
 $ mybench
-Elapsed 0.190000 seconds.
+Elapsed 0.150000 seconds.
 ```
 
 ## Author
