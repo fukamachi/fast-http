@@ -12,7 +12,7 @@ install:
   - curl https://raw.githubusercontent.com/luismbo/cl-travis/master/install.sh | bash
 
 before_script:
-  - git clone https://github.com/fukamachi/proc-parse ~/proc-parse
+  - git clone https://github.com/fukamachi/proc-parse ~/lisp/proc-parse
   - git clone https://github.com/joyent/http-parser ~/http-parser
   - cp $TRAVIS_BUILD_DIR/benchmark/http-parser.c ~/http-parser/mybench.c
   - cd ~/http-parser && make http_parser.o && gcc -Wall -Wextra -Werror -Wno-error=unused-but-set-variable -O3 http_parser.o mybench.c -o mybench
