@@ -509,13 +509,15 @@ you?\r
                                         :finish-callback
                                         (lambda ()
                                           (format t "finish.~%"))))
-         (header-chunk (subseq *response* 0 72))    ; <headers>
+         (header-chunk1 (subseq *response* 0 1))     ; <headers>
+         (header-chunk2 (subseq *response* 1 72))    ; <headers>
          (chunk1 (subseq *response* 72 84))   ; "hello, "
          (chunk2 (subseq *response* 84 102))  ; "how are "
          (chunk3 (subseq *response* 102))     ; "you?"
          (do-parse (lambda (chunk)
                      (funcall parser (babel:string-to-octets chunk)))))
-    (funcall do-parse header-chunk)
+    (funcall do-parse header-chunk1)
+    (funcall do-parse header-chunk2)
     (is-print (funcall do-parse chunk1) #?"chunk: hello, \n" "chunk1")
     (is-print (funcall do-parse chunk2) #?"chunk: how \nchunk: are \n" "chunk2")
     (is-print (funcall do-parse chunk3) #?"chunk: you?\nfinish.\n" "chunk3 and finish")))
