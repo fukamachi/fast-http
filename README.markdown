@@ -203,11 +203,11 @@ Will be raised when the `data` ends in the middle of parsing.
 
 - Parsing an HTTP request header 100000 times.
 
-In this benchmark, fast-http is **1.08 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
+In this benchmark, fast-http is **1.25 times faster** than [http-parser](https://github.com/joyent/http-parser), a C equivalent.
 
 | http-parser (C) | fast-http |
 | ---------------:| ---------:|
-|      0.150s     |   0.139s  |
+|      0.108s     |   0.086s  |
 
 ### Environment
 
@@ -225,10 +225,10 @@ You can see the latest result at [Travis CI](https://travis-ci.org/fukamachi/fas
 
 ```
 Evaluation took:
-  0.139 seconds of real time
-  0.136979 seconds of total run time (0.135979 user, 0.001000 system)
-  98.56% CPU
-  318,734,187 processor cycles
+  0.086 seconds of real time
+  0.085897 seconds of total run time (0.084763 user, 0.001134 system)
+  100.00% CPU
+  257,140,751 processor cycles
   0 bytes consed
 ```
 
@@ -288,7 +288,7 @@ main (void)
 $ make http_parser.o
 $ gcc -Wall -Wextra -Werror -Wno-error=unused-but-set-variable -O3 http_parser.o mybench.c -o mybench
 $ mybench
-Elapsed 0.150000 seconds.
+Elapsed 0.108815 seconds.
 ```
 
 ## Author
