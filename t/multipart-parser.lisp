@@ -364,4 +364,33 @@
                         #?"-----------------------------186454651713519341951581030105abc"))
       :test #'equalp))
 
+(let* ((got-body nil)
+       (got-headers nil)
+       (got-field-meta nil)
+       (parser (make-multipart-parser
+                "multipart/form-data; boundary=\"---------------------------186454651713519341951581030105\""
+                (lambda (field-name headers field-meta body)
+                  (declare (ignore field-name))
+                  (setf got-headers headers)
+                  (setf got-field-meta field-meta)
+                  (setf got-body (slurp-stream body))))))
+  (is (funcall parser
+               (bv (str #?"-----------------------------186454651713519341951581030105\r\n"
+                        #?"Content-Disposition: form-data; name=\"file\"; filename=\"黑客与画家(中文版).pdf\"\r\n"
+                        #?"Content-Type: application/octet-stream\r\n"
+                        #?"\r\n"
+                        #?"abc\r\n")))
+      nil)
+  (is got-headers nil)
+  (is got-field-meta nil)
+  (is got-body nil)
+  (is (funcall parser
+               (bv #?"-----------------------------186454651713519341951581030105\r\n"))
+      nil)
+  (is (gethash "content-disposition" got-headers)
+      "form-data; name=\"file\"; filename=\"黑客与画家(中文版).pdf\"")
+  (is (gethash "filename" got-field-meta)
+      "黑客与画家(中文版).pdf")
+  (is got-body (bv "abc") :test #'equalp))
+
 (finalize)

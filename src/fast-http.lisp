@@ -263,7 +263,8 @@
       (flet ((collect-prev-header-value ()
                (when header-value-buffer
                  (let ((header-value
-                         (coerce-to-string header-value-buffer)))
+                         (babel:octets-to-string
+                          (coerce-to-sequence header-value-buffer))))
                    (when parsing-content-disposition
                      (setq field-meta
                            (let (parsing-key

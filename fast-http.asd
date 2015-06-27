@@ -18,6 +18,7 @@
   :depends-on (:alexandria
                :cl-utilities
                :proc-parse
+               :babel
                :xsubseq
                #+fast-http-debug
                :log4cl
