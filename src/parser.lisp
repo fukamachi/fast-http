@@ -94,7 +94,8 @@ us a never-ending header that the application keeps buffering.")
 
 (define-condition eof () ())
 
-(define-condition expect-failed (parsing-error) ())
+(define-condition expect-failed (parsing-error)
+  ((fast-http.error::description :initform "expect failed")))
 
 
 ;;
