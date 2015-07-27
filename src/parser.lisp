@@ -94,7 +94,8 @@ us a never-ending header that the application keeps buffering.")
 
 (define-condition eof () ())
 
-(define-condition expect-failed (parsing-error) ())
+(define-condition expect-failed (parsing-error)
+  ((fast-http.error::description :initform "expect failed")))
 
 
 ;;
@@ -532,7 +533,7 @@ us a never-ending header that the application keeps buffering.")
               (go body-end-crlf))
              ((= (http-state http) +state-trailing-headers+)
               (go trailing-headers))
-             (T (error 'invalid-internal-state)))
+             (T (error 'invalid-internal-state :code (http-state http))))
 
          chunk-size
            (let ((unhex-val (unhex-byte (current))))
@@ -624,7 +625,7 @@ us a never-ending header that the application keeps buffering.")
                 (go headers))
                ((<= +state-chunk-size+ state +state-trailing-headers+)
                 (go body))
-               (T (error 'invalid-internal-state))))
+               (T (error 'invalid-internal-state :code state))))
 
          first-line
            ;; skip first empty line (some clients add CRLF after POST content)
@@ -716,7 +717,7 @@ us a never-ending header that the application keeps buffering.")
                 (go headers))
                ((<= +state-chunk-size+ state +state-trailing-headers+)
                 (go body))
-               (T (error 'invalid-internal-state))))
+               (T (error 'invalid-internal-state :code state))))
 
          first-line
            (setf (http-mark http) (pos))
