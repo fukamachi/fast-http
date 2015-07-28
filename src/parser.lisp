@@ -278,52 +278,60 @@ us a never-ending header that the application keeps buffering.")
                             (t
                              (callback-data :header-field http callbacks data field-start field-end)
                              (callback-data :header-value http callbacks data (pos) (pos)))))
-                         (t ,@body)))))
+                         (t ,@body))))
+                  (handle-otherwise ()
+                    `(progn
+                       ;; skip until field end
+                       (do ((char (svref +tokens+ (current))
+                                  (svref +tokens+ (current))))
+                           ((= (current) (char-code #\:)))
+                         (declare (type character char))
+                         (when (char= char #\Nul)
+                           (error 'invalid-header-token))
+                         (advance))
+
+                       (setq field-end (pos))
+                       (skip-until-value-start-and
+                        (advance-to*
+                         (parse-header-value http callbacks data (pos) end field-start field-end)))))
+                  (expect-field-end (&body body)
+                    `(if (= (current) #.(char-code #\:))
+                         (progn
+                           (setq field-end (pos))
+                           ,@body)
+                         (handle-otherwise))))
          (match-i-case
           ("content-length"
-           (setq field-end (pos))
-           (skip-until-value-start-and
-            (multiple-value-bind (value-start value-end next content-length)
-                (parse-header-value-content-length data (pos) end)
-              (declare (type pointer next))
-              (setf (http-content-length http) content-length)
-              (advance-to* next)
-              (callback-data :header-field http callbacks data field-start field-end)
-              (callback-data :header-value http callbacks data value-start value-end))))
+           (expect-field-end
+            (skip-until-value-start-and
+             (multiple-value-bind (value-start value-end next content-length)
+                 (parse-header-value-content-length data (pos) end)
+               (declare (type pointer next))
+               (setf (http-content-length http) content-length)
+               (advance-to* next)
+               (callback-data :header-field http callbacks data field-start field-end)
+               (callback-data :header-value http callbacks data value-start value-end)))))
           ("transfer-encoding"
-           (setq field-end (pos))
-           (skip-until-value-start-and
-            (multiple-value-bind (value-start value-end next chunkedp)
-                (parse-header-value-transfer-encoding data (pos) end)
-              (declare (type pointer next))
-              (setf (http-chunked-p http) chunkedp)
-              (advance-to* next)
-              (callback-data :header-field http callbacks data field-start field-end)
-              (callback-data :header-value http callbacks data value-start value-end))))
+           (expect-field-end
+            (skip-until-value-start-and
+             (multiple-value-bind (value-start value-end next chunkedp)
+                 (parse-header-value-transfer-encoding data (pos) end)
+               (declare (type pointer next))
+               (setf (http-chunked-p http) chunkedp)
+               (advance-to* next)
+               (callback-data :header-field http callbacks data field-start field-end)
+               (callback-data :header-value http callbacks data value-start value-end)))))
           ("upgrade"
-           (setq field-end (pos))
-           (setf (http-upgrade-p http) T)
-           (skip-until-value-start-and
-            (let ((value-start (pos)))
-              (skip* (not #\Return))
-              (advance)
-              (skip #\Newline)
-              (callback-data :header-field http callbacks data field-start field-end)
-              (callback-data :header-value http callbacks data value-start (- (pos) 2)))))
-          (otherwise
-           ;; skip until field end
-           (do ((char (svref +tokens+ (current))
-                      (svref +tokens+ (current))))
-               ((= (current) (char-code #\:)))
-             (declare (type character char))
-             (when (char= char #\Nul)
-               (error 'invalid-header-token))
-             (advance))
-
-           (setq field-end (pos))
-           (skip-until-value-start-and
-            (advance-to*
-             (parse-header-value http callbacks data (pos) end field-start field-end)))))))
+           (expect-field-end
+            (skip-until-value-start-and
+             (setf (http-upgrade-p http) T)
+             (let ((value-start (pos)))
+               (skip* (not #\Return))
+               (advance)
+               (skip #\Newline)
+               (callback-data :header-field http callbacks data field-start field-end)
+               (callback-data :header-value http callbacks data value-start (- (pos) 2))))))
+          (otherwise (handle-otherwise)))))
      (pos))
    (error 'eof)))
 
