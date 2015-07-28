@@ -278,7 +278,22 @@ us a never-ending header that the application keeps buffering.")
                             (t
                              (callback-data :header-field http callbacks data field-start field-end)
                              (callback-data :header-value http callbacks data (pos) (pos)))))
-                         (t ,@body)))))
+                         (t ,@body))))
+                  (handle-otherwise ()
+                    ;; skip until field end
+                    `(progn
+                       (do ((char (svref +tokens+ (current))
+                                  (svref +tokens+ (current))))
+                           ((= (current) (char-code #\:)))
+                         (declare (type character char))
+                         (when (char= char #\Nul)
+                           (error 'invalid-header-token))
+                         (advance))
+
+                       (setq field-end (pos))
+                       (skip-until-value-start-and
+                        (advance-to*
+                         (parse-header-value http callbacks data (pos) end field-start field-end))))))
          (match-i-case
           ("content-length"
            (setq field-end (pos))
@@ -310,20 +325,8 @@ us a never-ending header that the application keeps buffering.")
               (skip #\Newline)
               (callback-data :header-field http callbacks data field-start field-end)
               (callback-data :header-value http callbacks data value-start (- (pos) 2)))))
-          (otherwise
-           ;; skip until field end
-           (do ((char (svref +tokens+ (current))
-                      (svref +tokens+ (current))))
-               ((= (current) (char-code #\:)))
-             (declare (type character char))
-             (when (char= char #\Nul)
-               (error 'invalid-header-token))
-             (advance))
-
-           (setq field-end (pos))
-           (skip-until-value-start-and
-            (advance-to*
-             (parse-header-value http callbacks data (pos) end field-start field-end)))))))
+          ("upgrade-" (handle-otherwise))
+          (otherwise (handle-otherwise)))))
      (pos))
    (error 'eof)))
 
