@@ -280,8 +280,8 @@ us a never-ending header that the application keeps buffering.")
                              (callback-data :header-value http callbacks data (pos) (pos)))))
                          (t ,@body))))
                   (handle-otherwise ()
-                    ;; skip until field end
                     `(progn
+                       ;; skip until field end
                        (do ((char (svref +tokens+ (current))
                                   (svref +tokens+ (current))))
                            ((= (current) (char-code #\:)))
