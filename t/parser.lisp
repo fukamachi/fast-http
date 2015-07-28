@@ -399,6 +399,7 @@
                  #?"Connection: Upgrade\r\n"
                  #?"Sec-WebSocket-Key2: 12998 5 Y3 1  .P00\r\n"
                  #?"Sec-WebSocket-Protocol: sample\r\n"
+                 #?"Upgrade-Insecure-Requests: 1\r\n"
                  #?"Upgrade: WebSocket\r\n"
                  #?"Sec-WebSocket-Key1: 4 @1  46546xW%0l 1 5\r\n"
                  #?"Origin: http://example.com\r\n"
@@ -413,6 +414,7 @@
                 "Connection" "Upgrade"
                 "Sec-WebSocket-Key2" "12998 5 Y3 1  .P00"
                 "Sec-WebSocket-Protocol" "sample"
+                "Upgrade-Insecure-Requests" "1"
                 "Upgrade" "WebSocket"
                 "Sec-WebSocket-Key1" "4 @1  46546xW%0l 1 5"
                 "Origin" "http://example.com")
