@@ -741,6 +741,51 @@
             :http-minor 1)
       "Divide into two"))
 
+(is (test-parser :request
+                 #?"GET /test\r\n"
+                 #?"Host: 0.0.0.0=5000\r\n"
+                 #?"Accept: */*\r\n"
+                 #?"\r\n")
+    '(:method :get
+      :status-code nil
+      :http-major 0
+      :http-minor 9
+      :url "/test"
+      :headers ("Host" "0.0.0.0=5000"
+                "Accept" "*/*")
+      :body "")
+    "GET (HTTP/0.9)")
+
+(is (test-parser :request
+                 #?"GET /test?name=my name\r\n"
+                 #?"Host: 0.0.0.0=5000\r\n"
+                 #?"Accept: */*\r\n"
+                 #?"\r\n")
+    '(:method :get
+      :status-code nil
+      :http-major 0
+      :http-minor 9
+      :url "/test?name=my name"
+      :headers ("Host" "0.0.0.0=5000"
+                "Accept" "*/*")
+      :body "")
+    "Space in URI (HTTP/0.9)")
+
+(is (test-parser :request
+                 #?"GET /test?name=my name HTTP/1.1\r\n"
+                 #?"Host: 0.0.0.0=5000\r\n"
+                 #?"Accept: */*\r\n"
+                 #?"\r\n")
+    '(:method :get
+      :status-code nil
+      :http-major 1
+      :http-minor 1
+      :url "/test?name=my name"
+      :headers ("Host" "0.0.0.0=5000"
+                "Accept" "*/*")
+      :body "")
+    "Space in URI (HTTP/1.1)")
+
 
 ;;
 ;; Response
