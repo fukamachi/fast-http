@@ -479,9 +479,9 @@ us a never-ending header that the application keeps buffering.")
     (when (= status-code 0) ;; probably request
       (return-from http-message-needs-eof-p nil))
 
-    (when (and (< 99 status-code 200) ;; 1xx e.g. Continue
-               (= status-code 204)    ;; No Content
-               (= status-code 304))   ;; Not Modified
+    (when (or (< 99 status-code 200) ;; 1xx e.g. Continue
+              (= status-code 204)    ;; No Content
+              (= status-code 304))   ;; Not Modified
       (return-from http-message-needs-eof-p nil))
 
     (when (or (http-chunked-p http)
