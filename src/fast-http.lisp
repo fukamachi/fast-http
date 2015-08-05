@@ -220,13 +220,12 @@
              (setq data-buffer nil
                    start 0
                    end nil))
+           (setf (http-mark http) start)
            (handler-case
                (funcall parse-fn http callbacks (the simple-byte-vector data) :start start :end end)
              (eof ()
-               ;; Prevent an error when the first chunk is empty.
-               (unless (= -1 (http-mark http))
-                 (setq data-buffer
-                       (subseq data (http-mark http) (or end (length data))))))))))
+               (setq data-buffer
+                     (subseq data (http-mark http) (or end (length data)))))))))
       (values http header-complete-p completedp))))
 
 (defun find-boundary (content-type)
