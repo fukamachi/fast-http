@@ -24,7 +24,7 @@ install:
   - ros install prove
   - git clone https://github.com/joyent/http-parser ~/http-parser
   - cp $TRAVIS_BUILD_DIR/benchmark/http-parser.c ~/http-parser/mybench.c
-  - cd ~/http-parser && make http_parser.o && gcc -Wall -Wextra -Werror -Wno-error=unused-but-set-variable -O3 http_parser.o mybench.c -o mybench
+  - (cd ~/http-parser && make http_parser.o && gcc -Wall -Wextra -Werror -Wno-error=unused-but-set-variable -O3 http_parser.o mybench.c -o mybench)
 
 before_script:
   - ros --version
