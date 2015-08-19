@@ -1,6 +1,11 @@
 language: common-lisp
+sudo: required
 
 env:
+  global:
+    - PATH=~/.roswell/bin:~/nginx/sbin:$PATH
+    - ROSWELL_INSTALL_DIR=$HOME/.roswell
+    - COVERAGE_EXCLUDE=t
   matrix:
     - LISP=sbcl
     - LISP=ccl
@@ -12,17 +17,19 @@ matrix:
     - env: LISP=clisp
 
 install:
-  # Install cl-travis
-  - curl https://raw.githubusercontent.com/luismbo/cl-travis/master/install.sh | bash
-
-before_script:
-  - git clone https://github.com/fukamachi/proc-parse ~/lisp/proc-parse
+  # Install Roswell
+  - curl -L https://raw.githubusercontent.com/fukamachi/roswell/abcl-opts/scripts/install-for-ci.sh | sh
+  - git clone https://github.com/rpav/fast-io ~/lisp/fast-io
+  - ros install prove
   - git clone https://github.com/joyent/http-parser ~/http-parser
   - cp $TRAVIS_BUILD_DIR/benchmark/http-parser.c ~/http-parser/mybench.c
   - cd ~/http-parser && make http_parser.o && gcc -Wall -Wextra -Werror -Wno-error=unused-but-set-variable -O3 http_parser.o mybench.c -o mybench
 
+before_script:
+  - ros --version
+  - ros config
+
 script:
-  - cl -l prove
-       -e '(or (prove:run :fast-http-test) (uiop:quit -1))'
-  - cl -l fast-http-test -e '(fast-http-test.benchmark:run-ll-benchmark)'
+  - run-prove fast-http-test.asd
+  - ros -s fast-http-test -e '(fast-http-test.benchmark:run-ll-benchmark)'
   - ~/http-parser/mybench
