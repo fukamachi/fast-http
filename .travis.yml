@@ -11,6 +11,7 @@ env:
     - LISP=ccl
     - LISP=clisp
     - LISP=abcl
+    - LISP=ecl
 
 matrix:
   allow_failures:
