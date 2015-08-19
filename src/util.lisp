@@ -170,7 +170,7 @@
 
 (declaim (inline position-not-whitespace))
 (defun position-not-whitespace (string &key from-end)
-  (declare (type simple-string string)
+  (declare (type #+ecl string #-ecl simple-string string)
            (optimize (speed 3) (safety 0)))
   (let* ((len (length string))
          (start (if from-end (1- len) 0))
@@ -185,7 +185,7 @@
 
 (declaim (inline number-string-p))
 (defun number-string-p (string)
-  (declare (type simple-string string)
+  (declare (type #+ecl string #-ecl simple-string string)
            (optimize (speed 3) (safety 2)))
   ;; empty string
   (when (zerop (length string))
