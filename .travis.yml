@@ -5,10 +5,9 @@ env:
   global:
     - PATH=~/.roswell/bin:~/nginx/sbin:$PATH
     - ROSWELL_INSTALL_DIR=$HOME/.roswell
-    - COVERAGE_EXCLUDE=t
   matrix:
-    - LISP=sbcl
-    - LISP=ccl
+    - LISP=sbcl-bin
+    - LISP=ccl-bin
     - LISP=clisp
     - LISP=abcl
     - LISP=ecl
