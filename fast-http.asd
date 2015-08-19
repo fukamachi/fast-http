@@ -49,3 +49,9 @@
           (setf (fill-pointer seq) (read-sequence seq stream))
           seq)))
   :in-order-to ((test-op (test-op fast-http-test))))
+
+;; XXX: On ECL, it fails if loading a FASL file of parser.lisp.
+;;   This is an ugly workaround for now, as I don't get why it happens.
+#+ecl
+(defmethod asdf:perform :after ((op asdf:load-op) (c (eql (asdf:find-system :fast-http))))
+  (load (asdf:system-relative-pathname :fast-http #P"src/parser.lisp")))
