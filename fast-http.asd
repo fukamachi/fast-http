@@ -24,7 +24,7 @@
                :log4cl
 
                ;; for body-buffer
-               :cl-fad
+               :uiop
                :flexi-streams)
   :components ((:module "src"
                 :components

@@ -53,7 +53,7 @@
     ((and (buffer-on-memory-p buffer)
           (< (buffer-memory-limit buffer)
              (buffer-current-len buffer)))
-     (let ((temp (fad:open-temporary :direction :io :element-type '(unsigned-byte 8))))
+     (uiop:with-temporary-file (:stream temp :direction :io :element-type '(unsigned-byte 8) :keep t)
        (typecase (buffer-memory-buffer buffer)
          (null-concatenated-xsubseqs)
          (T (write-sequence (coerce-to-sequence (buffer-memory-buffer buffer)) temp)))
