@@ -46,20 +46,25 @@
   (check-limit buffer)
   (if (buffer-on-memory-p buffer)
       (xnconcf (buffer-memory-buffer buffer) (xsubseq seq start end))
-      (write-sequence seq (buffer-disk-buffer buffer) :start start :end end)))
+      (with-open-file (out (buffer-disk-buffer buffer)
+                           :direction :output
+                           :element-type '(unsigned-byte 8)
+                           :if-exists :append)
+        (write-sequence seq out :start start :end end))))
 
 (defun check-limit (buffer)
   (cond
     ((and (buffer-on-memory-p buffer)
           (< (buffer-memory-limit buffer)
              (buffer-current-len buffer)))
-     (uiop:with-temporary-file (:stream temp :direction :io :element-type '(unsigned-byte 8) :keep t)
-       (typecase (buffer-memory-buffer buffer)
-         (null-concatenated-xsubseqs)
-         (T (write-sequence (coerce-to-sequence (buffer-memory-buffer buffer)) temp)))
-       (setf (buffer-on-memory-p buffer) nil
-             (buffer-memory-buffer buffer) nil
-             (buffer-disk-buffer buffer) temp)))
+     (setf (buffer-disk-buffer buffer)
+           (uiop:with-temporary-file (:stream stream :pathname tmp :direction :output :element-type '(unsigned-byte 8) :keep t)
+             (typecase (buffer-memory-buffer buffer)
+               (null-concatenated-xsubseqs)
+               (T (write-sequence (coerce-to-sequence (buffer-memory-buffer buffer)) stream)))
+             tmp)
+           (buffer-on-memory-p buffer) nil
+           (buffer-memory-buffer buffer) nil))
     ((and (not (buffer-on-memory-p buffer))
           (< (buffer-disk-limit buffer)
              (buffer-current-len buffer)))
@@ -71,6 +76,4 @@
        (typecase (buffer-memory-buffer buffer)
          (null-concatenated-xsubseqs #())
          (T (coerce-to-sequence (buffer-memory-buffer buffer)))))
-      (let ((stream (buffer-disk-buffer buffer)))
-        (file-position stream 0)
-        stream)))
+      (open (buffer-disk-buffer buffer) :direction :input :element-type '(unsigned-byte 8))))
