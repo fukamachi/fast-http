@@ -14,7 +14,7 @@ env:
 
 install:
   # Install Roswell
-  - curl -L https://raw.githubusercontent.com/fukamachi/roswell/abcl-opts/scripts/install-for-ci.sh | sh
+  - curl -L https://raw.githubusercontent.com/snmsts/roswell/release/scripts/install-for-ci.sh | sh
   - git clone https://github.com/rpav/fast-io ~/lisp/fast-io
   - ros install prove
   - git clone https://github.com/joyent/http-parser ~/http-parser
