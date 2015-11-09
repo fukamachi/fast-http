@@ -4,7 +4,6 @@
         :fast-http.http
         :fast-http.parser
         :fast-http.multipart-parser
-        :fast-http.body-buffer
         :fast-http.byte-vector
         :fast-http.error
         :xsubseq)
@@ -17,6 +16,10 @@
   (:import-from :fast-http.util
                 :defun-careful
                 :number-string-p)
+  (:import-from :smart-buffer
+                :make-smart-buffer
+                :write-to-buffer
+                :finalize-buffer)
   (:export :make-parser
            :http-request
            :http-response
@@ -50,11 +53,6 @@
            :http-multipart-parse
            :ll-multipart-parser
            :make-ll-multipart-parser
-
-           ;; body-buffer
-           :*default-memory-limit*
-           :*default-disk-limit*
-           :body-buffer-limit-exceeded
 
            ;; Error
            :fast-http-error
@@ -259,7 +257,7 @@
           parsing-header-field
           field-meta
           header-value-buffer
-          (body-buffer (make-body-buffer))
+          (body-buffer (make-smart-buffer))
           callbacks)
       (flet ((collect-prev-header-value ()
                (when header-value-buffer
@@ -309,7 +307,7 @@
                                             field-meta
                                             (finalize-buffer body-buffer))
                                    (setq headers (make-hash-table :test 'equal)
-                                         body-buffer (make-body-buffer)
+                                         body-buffer (make-smart-buffer)
                                          header-value-buffer nil))
                :body (lambda (parser data start end)
                        (declare (ignore parser))
