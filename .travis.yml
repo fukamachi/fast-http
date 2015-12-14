@@ -16,6 +16,7 @@ install:
   # Install Roswell
   - curl -L https://raw.githubusercontent.com/snmsts/roswell/release/scripts/install-for-ci.sh | sh
   - git clone https://github.com/rpav/fast-io ~/lisp/fast-io
+  - git clone https://github.com/fukamachi/smart-buffer ~/lisp/smart-buffer
   - ros install prove
   - git clone https://github.com/joyent/http-parser ~/http-parser
   - cp $TRAVIS_BUILD_DIR/benchmark/http-parser.c ~/http-parser/mybench.c
