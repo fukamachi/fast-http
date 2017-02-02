@@ -6,7 +6,7 @@ env:
     - PATH=~/.roswell/bin:~/nginx/sbin:$PATH
     - ROSWELL_INSTALL_DIR=$HOME/.roswell
   matrix:
-    - LISP=sbcl-bin
+    - LISP=sbcl-bin/1.3.14
     - LISP=ccl-bin
     - LISP=clisp
     - LISP=abcl
