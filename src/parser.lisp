@@ -619,7 +619,9 @@ us a never-ending header that the application keeps buffering.")
   (let ((end (or end (length data))))
     (declare (type pointer start end))
     (handler-bind ((match-failed
-                     (lambda () (error 'expect-failed))))
+                     (lambda (c)
+                       (declare (ignore c))
+                       (error 'expect-failed))))
       (with-octets-parsing (data :start start :end end)
         (setf (http-mark http) start)
 
@@ -720,7 +722,9 @@ us a never-ending header that the application keeps buffering.")
                  (length data))))
     (declare (type pointer start end))
     (handler-bind ((match-failed
-                     (lambda () (error 'expect-failed))))
+                     (lambda (c)
+                       (declare (ignore c))
+                       (error 'expect-failed))))
       (with-octets-parsing (data :start start :end end)
         (setf (http-mark http) start)
 
