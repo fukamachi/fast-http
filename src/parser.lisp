@@ -441,7 +441,6 @@ us a never-ending header that the application keeps buffering.")
             (error 'header-overflow))
           (multiple-value-bind (next endp)
               (parse-header-line http callbacks data (pos) end)
-            (declare (type (unsigned-byte 8) next))
             (advance-to* next)
             (when endp
               (return)))
