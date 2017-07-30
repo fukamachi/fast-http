@@ -120,7 +120,7 @@
     (flet ((collect-prev-header-value ()
              (when header-value-buffer
                (let ((header-value
-                       (locally (declare (optimize (speed 3) (safety 0)))
+                       (progn
                          (coerce-to-string
                           (the (or octets-concatenated-xsubseqs
                                    octets-xsubseq)
@@ -134,9 +134,7 @@
                                  (if (simple-string-p previous-value)
                                      (concatenate 'string (the simple-string previous-value) ", " header-value)
                                      (format nil "~A, ~A" previous-value header-value))
-                                 (if (number-string-p header-value)
-                                     (read-from-string header-value)
-                                     header-value)))))))))
+                                 header-value))))))))
       (setq callbacks
             (make-callbacks
              :message-begin (lambda (http)
@@ -200,7 +198,6 @@
                                  (setq completedp t)))))
 
     (lambda (data &key (start 0) end)
-      (declare (optimize (speed 3) (safety 2)))
       (cond
         ((eql data :eof)
          (setq completedp t)
