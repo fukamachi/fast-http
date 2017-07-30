@@ -134,7 +134,9 @@
                                  (if (simple-string-p previous-value)
                                      (concatenate 'string (the simple-string previous-value) ", " header-value)
                                      (format nil "~A, ~A" previous-value header-value))
-                                 header-value))))))))
+                                 (if (number-string-p header-value)
+                                     (read-from-string header-value)
+                                     header-value)))))))))
       (setq callbacks
             (make-callbacks
              :message-begin (lambda (http)
