@@ -103,35 +103,39 @@ us a never-ending header that the application keeps buffering.")
 
 (declaim (type (simple-array character (128)) +tokens+))
 (define-constant +tokens+
-    #( #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
-       #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
-       #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
-       #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
-       #\Nul   #\!   #\Nul   #\#    #\$    #\%    #\&    #\'
-       #\Nul  #\Nul   #\*    #\+   #\Nul    #\-   #\.   #\Nul
-        #\0    #\1    #\2    #\3    #\4    #\5    #\6    #\7
-        #\8    #\9   #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
-       #\Nul   #\a    #\b    #\c    #\d    #\e    #\f    #\g
-        #\h    #\i    #\j    #\k    #\l    #\m    #\n    #\o
-        #\p    #\q    #\r    #\s    #\t    #\u    #\v    #\w
-        #\x    #\y    #\z   #\Nul  #\Nul  #\Nul   #\^    #\_
-        #\`    #\a    #\b    #\c    #\d    #\e    #\f    #\g
-        #\h    #\i    #\j    #\k    #\l    #\m    #\n    #\o
-        #\p    #\q    #\r    #\s    #\t    #\u    #\v    #\w
-        #\x    #\y    #\z   #\Nul   #\|   #\Nul   #\~   #\Nul )
-  :test 'equalp)
+    (make-array 128
+                :element-type 'character
+                :initial-contents
+                '( #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
+                   #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
+                   #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
+                   #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
+                   #\Nul   #\!   #\Nul   #\#    #\$    #\%    #\&    #\'
+                   #\Nul  #\Nul   #\*    #\+   #\Nul    #\-   #\.   #\Nul
+                   #\0    #\1    #\2    #\3    #\4    #\5    #\6    #\7
+                   #\8    #\9   #\Nul  #\Nul  #\Nul  #\Nul  #\Nul  #\Nul
+                   #\Nul   #\a    #\b    #\c    #\d    #\e    #\f    #\g
+                   #\h    #\i    #\j    #\k    #\l    #\m    #\n    #\o
+                   #\p    #\q    #\r    #\s    #\t    #\u    #\v    #\w
+                   #\x    #\y    #\z   #\Nul  #\Nul  #\Nul   #\^    #\_
+                   #\`    #\a    #\b    #\c    #\d    #\e    #\f    #\g
+                   #\h    #\i    #\j    #\k    #\l    #\m    #\n    #\o
+                   #\p    #\q    #\r    #\s    #\t    #\u    #\v    #\w
+                   #\x    #\y    #\z   #\Nul   #\|   #\Nul   #\~   #\Nul ))
+    :test 'equalp)
 
 (declaim (type (simple-array fixnum (128)) +unhex+))
 (define-constant +unhex+
-    #(-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
-      -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
-      -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
-       0  1  2  3  4  5  6  7  8  9 -1 -1 -1 -1 -1 -1
-      -1 10 11 12 13 14 15 -1 -1 -1 -1 -1 -1 -1 -1 -1
-      -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
-      -1 10 11 12 13 14 15 -1 -1 -1 -1 -1 -1 -1 -1 -1
-      -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1)
-  :test 'equalp)
+    (make-array 128 :element-type 'fixnum :initial-contents
+                '(-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+                  0  1  2  3  4  5  6  7  8  9 -1 -1 -1 -1 -1 -1
+                  -1 10 11 12 13 14 15 -1 -1 -1 -1 -1 -1 -1 -1 -1
+                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+                  -1 10 11 12 13 14 15 -1 -1 -1 -1 -1 -1 -1 -1 -1
+                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1))
+    :test 'equalp)
 
 (defun-insane unhex-byte (byte)
   (aref +unhex+ byte))
