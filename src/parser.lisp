@@ -286,8 +286,8 @@ us a never-ending header that the application keeps buffering.")
                   (handle-otherwise ()
                     `(progn
                        ;; skip until field end
-                       (do ((char (svref +tokens+ (current))
-                                  (svref +tokens+ (current))))
+                       (do ((char (aref +tokens+ (current))
+                                  (aref +tokens+ (current))))
                            ((= (current) (char-code #\:)))
                          (declare (type character char))
                          (when (char= char #\Nul)
