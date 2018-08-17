@@ -228,10 +228,14 @@
                   (go-state +looking-for-delimiter+ 0))
                 (go-state +maybe-delimiter-first-dash+))
 
-               (+maybe-delimiter-first-dash+
+	       (+maybe-delimiter-first-dash+
                 (if (= byte +dash+)
                     (go-state +maybe-delimiter-second-dash+)
-                    (go-state +looking-for-delimiter+)))
+		    (if (= byte +cr+)
+			(progn
+			  (setf (ll-multipart-parser-boundary-mark parser) p)
+			  (go-state +maybe-delimiter-start+))
+			(go-state +looking-for-delimiter+))))
 
                (+maybe-delimiter-second-dash+
                 (if (= byte +dash+)
