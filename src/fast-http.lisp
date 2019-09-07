@@ -14,8 +14,7 @@
   (:import-from :fast-http.multipart-parser
                 :+body-done+)
   (:import-from :fast-http.util
-                :defun-careful
-                :number-string-p)
+                :defun-careful)
   (:import-from :smart-buffer
                 :make-smart-buffer
                 :write-to-buffer
@@ -134,9 +133,7 @@
                                  (if (simple-string-p previous-value)
                                      (concatenate 'string (the simple-string previous-value) ", " header-value)
                                      (format nil "~A, ~A" previous-value header-value))
-                                 (if (number-string-p header-value)
-                                     (read-from-string header-value)
-                                     header-value)))))))))
+                                 header-value))))))))
       (setq callbacks
             (make-callbacks
              :message-begin (lambda (http)
