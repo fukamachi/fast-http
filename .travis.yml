@@ -25,6 +25,7 @@ before_script:
   - ros config
 
 script:
+  - ros -s fast-http-test
   - run-prove fast-http-test.asd
   - ros -s fast-http-test -e '(fast-http-test.benchmark:run-ll-benchmark)'
   - ~/http-parser/mybench
