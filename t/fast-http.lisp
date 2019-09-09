@@ -88,7 +88,7 @@
               :accept-language "en-us,en;q=0.5"
               :accept-encoding "gzip,deflate"
               :accept-charset "ISO-8859-1,utf-8;q=0.7,*;q=0.7"
-              :keep-alive 300
+              :keep-alive "300"
               :connection "keep-alive")
             nil
             "Firefox GET")
@@ -123,7 +123,7 @@
                  #?"conTENT-Length: 5\r\n"
                  #?"\r\n"
                  #?"HELLO")
-            '(:content-length 5)
+            '(:content-length "5")
             (bv "HELLO")
             "get funky content length body HELLO")
 
@@ -135,7 +135,7 @@
                  #?"World")
             '(:accept "*/*"
               :transfer-encoding "identity"
-              :content-length 5)
+              :content-length "5")
             (bv "World")
             "post identity body world")
 
@@ -316,7 +316,7 @@
             '(:host "www.example.com"
               :content-type "application/example"
               :if-match "\"e0023aa4e\""
-              :content-length 10)
+              :content-length "10")
             (bv "cccccccccc")
             "PATCH request")
 
@@ -353,7 +353,7 @@
                  #?"q=42\r\n")
             '(:host "www.example.com"
               :content-type "application/x-www-form-urlencoded"
-              :content-length 4)
+              :content-length "4")
             (bv "q=42")
             "eat CRLF between requests, no \"Connection: close\" header")
 
@@ -366,7 +366,7 @@
                  #?"q=42\r\n")
             '(:host "www.example.com"
               :content-type "application/x-www-form-urlencoded"
-              :content-length 4
+              :content-length "4"
               :connection "close")
             (bv "q=42")
             "eat CRLF between requests even if \"Connection: close\" is set")
@@ -442,7 +442,7 @@
                :x-$prototypebi-version "1.6.0.3"
                :cache-control "public, max-age=2592000"
                :server "gws"
-               :content-length 219)
+               :content-length "219  ")
              (bv (str #?"<HTML><HEAD><meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\n"
                       #?"<TITLE>301 Moved</TITLE></HEAD><BODY>\n"
                       #?"<H1>301 Moved</H1>\n"
