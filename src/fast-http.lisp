@@ -168,7 +168,7 @@
                                       (type simple-byte-vector data)
                                       (type pointer start end))
                              (xnconcf header-value-buffer
-                                      (xsubseq (the simple-byte-vector data) start end)))
+                                      (xsubseq (subseq (the simple-byte-vector data) start end) 0)))
              :headers-complete (lambda (http)
                                  (collect-prev-header-value)
                                  (setq header-value-buffer nil)
@@ -292,7 +292,7 @@
                :header-value (lambda (parser data start end)
                                (declare (ignore parser))
                                (xnconcf header-value-buffer
-                                        (xsubseq data start end)))
+                                        (xsubseq (subseq data start end) 0)))
                :headers-complete (lambda (parser)
                                    (declare (ignore parser))
                                    (collect-prev-header-value))
