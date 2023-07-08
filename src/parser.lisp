@@ -511,7 +511,12 @@ us a never-ending header that the application keeps buffering.")
            ;; Assume content-length 0 - read the next
            (progn
              (message-complete)
-             end)
+             ;; By returning "start", we'll continue
+             ;; to parse the next request in case if
+             ;; HTTP pipelining is used. Probably
+             ;; we need some way to enable (or disable)
+             ;; HTTP pipelining support.
+             start)
            ;; read until EOF
            (progn
              (callback-data :body http callbacks data start end)
