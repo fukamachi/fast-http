@@ -474,7 +474,7 @@ us a never-ending header that the application keeps buffering.")
           (decf (http-content-length http) readable-count)
           (callback-data :body http callbacks data start end)
           (setf (http-mark http) end)
-          (values end nil)))))
+          (values end (= readable-count 0))))))
 
 (defun-speedy http-message-needs-eof-p (http)
   (let ((status-code (http-status http)))
@@ -521,6 +521,7 @@ us a never-ending header that the application keeps buffering.")
            (progn
              (callback-data :body http callbacks data start end)
              (setf (http-mark http) end)
+	     (message-complete)
              end)))
       (otherwise
        ;; Content-Length header given and non-zero
