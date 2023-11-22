@@ -23,7 +23,8 @@
   (let ((http (make-http))
         (headers '())
         url
-        (body ""))
+        (body "")
+	(complete nil))
     (funcall (ecase type
                (:request #'parse-request)
                (:response #'parse-response))
@@ -47,7 +48,10 @@
                                          (babel:octets-to-string data :start start :end end))))
               :url (lambda (http data start end)
                      (declare (ignore http))
-                     (setq url (babel:octets-to-string data :start start :end end))))
+                     (setq url (babel:octets-to-string data :start start :end end)))
+	      :message-complete (lambda (http)
+				  (declare (ignore http))
+				  (setf complete t)))
              (bv (apply #'concatenate 'string objects)))
     (list :method (http-method http)
           :status-code (if (eql (http-status http) 0)
@@ -58,7 +62,8 @@
           :url url
           :headers (loop for (field . values) in (nreverse headers)
                          append (list field (apply #'concatenate 'string values)))
-          :body body)))
+          :body body
+	  :complete complete)))
 
 (subtest "HTTP methods"
   (dolist (method '("DELETE"
@@ -161,7 +166,8 @@
       :headers ("User-Agent" "curl/7.18.0 (i486-pc-linux-gnu) libcurl/7.18.0 OpenSSL/0.9.8g zlib/1.2.3.3 libidn/1.1"
                 "Host" "0.0.0.0=5000"
                 "Accept" "*/*")
-      :body "")
+      :body ""
+      :complete t)
     "curl GET")
 
 (is (test-parser :request
@@ -188,7 +194,8 @@
                 "Accept-Charset" "ISO-8859-1,utf-8;q=0.7,*;q=0.7"
                 "Keep-Alive" "300"
                 "Connection" "keep-alive")
-      :body "")
+      :body ""
+      :complete t)
     "Firefox GET")
 
 (is (test-parser :request
@@ -201,7 +208,8 @@
       :http-minor 1
       :url "/dumbfuck"
       :headers ("aaaaaaaaaaaaa" "++++++++++")
-      :body "")
+      :body ""
+      :complete t)
     "dumbfuck")
 
 (is (test-parser :request
@@ -213,7 +221,8 @@
       :http-minor 1
       :url "/forums/1/topics/2375?page=1#posts-17408"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "fragment in URL")
 
 (is (test-parser :request
@@ -225,7 +234,8 @@
       :http-minor 1
       :url "/get_no_headers_no_body/world"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "get no headers no body")
 
 (is (test-parser :request
@@ -238,7 +248,8 @@
       :http-minor 1
       :url "/get_one_header_no_body"
       :headers ("Accept" "*/*")
-      :body "")
+      :body ""
+      :complete t)
     "get one header no body")
 
 (is (test-parser :request
@@ -252,7 +263,8 @@
       :http-minor 0
       :url "/get_funky_content_length_body_hello"
       :headers ("conTENT-Length" "5")
-      :body "HELLO")
+      :body "HELLO"
+      :complete t)
     "get funky content length body hello")
 
 (is (test-parser :request
@@ -270,7 +282,8 @@
       :headers ("Accept" "*/*"
                 "Transfer-Encoding" "identity"
                 "Content-Length" "5")
-      :body "World")
+      :body "World"
+      :complete t)
     "post identity body world")
 
 (is (test-parser :request
@@ -286,7 +299,8 @@
       :http-minor 1
       :url "/post_chunked_all_your_base"
       :headers ("Transfer-Encoding" "chunked")
-      :body "all your base are belong to us")
+      :body "all your base are belong to us"
+      :complete t)
     "post - chunked body: all your base are belong to us")
 
 (is (test-parser :request
@@ -303,7 +317,8 @@
       :http-minor 1
       :url "/two_chunks_mult_zero_end"
       :headers ("Transfer-Encoding" "chunked")
-      :body "hello world")
+      :body "hello world"
+      :complete t)
     "two chunks ; triple zero ending")
 
 (is (test-parser :request
@@ -324,7 +339,8 @@
       :headers ("Transfer-Encoding" "chunked"
                 "Vary" "*"
                 "Content-Type" "text/plain")
-      :body "hello world")
+      :body "hello world"
+      :complete t)
     "chunked with trailing headers. blech.")
 
 (is (test-parser :request
@@ -341,7 +357,8 @@
       :http-minor 1
       :url "/chunked_w_bullshit_after_length"
       :headers ("Transfer-Encoding" "chunked")
-      :body "hello world")
+      :body "hello world"
+      :complete t)
     "with bullshit after the length")
 
 (is (test-parser :request
@@ -352,7 +369,8 @@
       :http-minor 1
       :url "/with_\"stupid\"_quotes?foo=\"bar\""
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "with quotes")
 
 (is (test-parser :request
@@ -368,7 +386,8 @@
       :headers ("Host" "0.0.0.0:5000"
                 "User-Agent" "ApacheBench/2.3"
                 "Accept" "*/*")
-      :body "")
+      :body ""
+      :complete t)
     "ApacheBench GET")
 
 (is (test-parser :request
@@ -379,7 +398,8 @@
       :http-minor 1
       :url "/test.cgi?foo=bar?baz"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "Query URL with question mark")
 
 (is (test-parser :request
@@ -390,7 +410,8 @@
       :http-minor 1
       :url "/test"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "Newline prefix GET")
 
 (is (test-parser :request
@@ -418,7 +439,8 @@
                 "Upgrade" "WebSocket"
                 "Sec-WebSocket-Key1" "4 @1  46546xW%0l 1 5"
                 "Origin" "http://example.com")
-      :body "")
+      :body ""
+      :complete t)
     "Upgrade request")
 
 (is (test-parser :request
@@ -435,7 +457,8 @@
       :url "0-home0.netscape.com:443"
       :headers ("User-agent" "Mozilla/1.1N"
                 "Proxy-authorization" "basic aGVsbG86d29ybGQ=")
-      :body "")
+      :body ""
+      :complete t)
     "CONNECT request")
 
 (is (test-parser :request
@@ -447,7 +470,8 @@
       :http-minor 1
       :url "/test"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "REPORT request")
 
 (is (test-parser :request
@@ -459,7 +483,8 @@
       :http-minor 9
       :url "/"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "request with no HTTP version")
 
 (is (test-parser :request
@@ -476,7 +501,8 @@
       :headers ("HOST" "239.255.255.250:1900"
                 "MAN" "\"ssdp:discover\""
                 "ST" "\"ssdp:all\"")
-      :body "")
+      :body ""
+      :complete t)
     "M-SEARCH request")
 
 (is (test-parser :request
@@ -505,7 +531,8 @@
                 "Line3" "line3"
                 "Line4" ""
                 "Connection" "close")
-      :body "")
+      :body ""
+      :complete t)
     "line folding in header value")
 
 (is (test-parser :request
@@ -517,7 +544,8 @@
       :http-minor 1
       :url "http://hypnotoad.org?hail=all"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "host terminated by a query string")
 
 (is (test-parser :request
@@ -529,7 +557,8 @@
       :http-minor 1
       :url "http://hypnotoad.org:1234?hail=all"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "host:port terminated by a query string")
 
 (is (test-parser :request
@@ -541,7 +570,8 @@
       :http-minor 1
       :url "http://hypnotoad.org:1234"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "host:port terminated by a space")
 
 (is (test-parser :request
@@ -561,7 +591,8 @@
                 "Content-Type" "application/example"
                 "If-Match" "\"e0023aa4e\""
                 "Content-Length" "10")
-      :body "cccccccccc")
+      :body "cccccccccc"
+      :complete t)
     "PATCH request")
 
 (is (test-parser :request
@@ -576,7 +607,8 @@
       :url "HOME0.NETSCAPE.COM:443"
       :headers ("User-agent" "Mozilla/1.1N"
                 "Proxy-authorization" "basic aGVsbG86d29ybGQ=")
-      :body "")
+      :body ""
+      :complete t)
     "CONNECT caps request")
 
 (is (test-parser :request
@@ -589,7 +621,8 @@
       :http-minor 1
       :url "/δ¶/δt/pope?q=1#narf"
       :headers ("Host" "github.com")
-      :body "")
+      :body ""
+      :complete t)
     "utf-8 path request")
 
 (is (test-parser :request
@@ -604,7 +637,8 @@
       :url "home_0.netscape.com:443"
       :headers ("User-agent" "Mozilla/1.1N"
                 "Proxy-authorization" "basic aGVsbG86d29ybGQ=")
-      :body "")
+      :body ""
+      :complete t)
     "underscore in hostname")
 
 (is (test-parser :request
@@ -622,7 +656,8 @@
       :headers ("Host" "www.example.com"
                 "Content-Type" "application/x-www-form-urlencoded"
                 "Content-Length" "4")
-      :body "q=42")
+      :body "q=42"
+      :complete t)
     "eat CRLF between requests, no \"Connection: close\" header")
 
 (is (test-parser :request
@@ -642,7 +677,8 @@
                 "Content-Type" "application/x-www-form-urlencoded"
                 "Content-Length" "4"
                 "Connection" "close")
-      :body "q=42")
+      :body "q=42"
+      :complete t)
     "eat CRLF between requests even if \"Connection: close\" is set")
 
 (is (test-parser :request
@@ -655,7 +691,8 @@
       :http-minor 1
       :url "/file.txt"
       :headers ("Host" "www.example.com")
-      :body "")
+      :body ""
+      :complete t)
     "PURGE request")
 
 (is (test-parser :request
@@ -668,7 +705,8 @@
       :http-minor 1
       :url "/"
       :headers ("Host" "www.example.com")
-      :body "")
+      :body ""
+      :complete t)
     "SEARCH request")
 
 (is (test-parser :request
@@ -680,7 +718,8 @@
       :http-minor 1
       :url "http://a%12:b!&*$@hypnotoad.org:1234/toto"
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "host:port and basic_auth")
 
 #+nil
@@ -708,7 +747,8 @@
                 "Line3" "line3"
                 "Line4" ""
                 "Connection" "close")
-      :body "")
+      :body ""
+      :complete t)
     "line folding in header value")
 
 (let ((http (make-http)))
@@ -753,7 +793,8 @@
       :url "/test"
       :headers ("Host" "0.0.0.0=5000"
                 "Accept" "*/*")
-      :body "")
+      :body ""
+      :complete t)
     "GET (HTTP/0.9)")
 
 (is (test-parser :request
@@ -768,7 +809,8 @@
       :url "/test?name=my name"
       :headers ("Host" "0.0.0.0=5000"
                 "Accept" "*/*")
-      :body "")
+      :body ""
+      :complete t)
     "Space in URI (HTTP/0.9)")
 
 (is (test-parser :request
@@ -783,7 +825,8 @@
       :url "/test?name=my name"
       :headers ("Host" "0.0.0.0=5000"
                 "Accept" "*/*")
-      :body "")
+      :body ""
+      :complete t)
     "Space in URI (HTTP/1.1)")
 
 
@@ -826,8 +869,23 @@
               #?"<H1>301 Moved</H1>\n"
               #?"The document has moved\n"
               #?"<A HREF=\"http://www.google.com/\">here</A>.\r\n"
-              #?"</BODY></HTML>\r\n"))
+              #?"</BODY></HTML>\r\n")
+      :complete t)
     "Google 301")
+
+(is (test-parser :response
+		 #?"HTTP/1.1 200 OK\r\n"
+		 #?"Content-Length: 400\r\n"
+		 #?"\r\n")
+    '(:method nil
+      :status-code 200
+      :http-major 1
+      :http-minor 1
+      :url nil
+      :headers ("Content-Length" "400")
+      :body ""
+      :complete t)
+    "Head response with Content-Length")
 
 (is (test-parser :response
                  #?"HTTP/1.1 200 OK\r\n"
@@ -865,7 +923,8 @@
               #?"       <faultstring>Client Error</faultstring>\n"
               #?"    </SOAP-ENV:Fault>\n"
               #?"  </SOAP-ENV:Body>\n"
-              #?"</SOAP-ENV:Envelope>"))
+              #?"</SOAP-ENV:Envelope>")
+      :complete t)
     "no Content-Length response")
 
 (is (test-parser :response
@@ -876,7 +935,8 @@
       :http-minor 1
       :url nil
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "404 no headers and no body")
 
 (is (test-parser :response
@@ -887,7 +947,8 @@
       :http-minor 1
       :url nil
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "301 no response phase")
 
 (is (test-parser :response
@@ -912,7 +973,8 @@
                 "Transfer-Encoding" "chunked")
        :body ,(concatenate 'string
                #?"This is the data in the first chunk\r\n"
-               #?"and this is the second one\r\n"))
+               #?"and this is the second one\r\n")
+      :complete t)
     "200 trailing space on chunked body")
 
 #+todo
@@ -929,7 +991,8 @@
       :url nil
       :headers ("Content-Type" "text/html; charset=utf-8"
                 "Connection" "close")
-      :body "these headers are from http://news.ycombinator.com/")
+      :body "these headers are from http://news.ycombinator.com/"
+      :complete t)
     "no carriage ret")
 
 (is (test-parser :response
@@ -949,7 +1012,8 @@
                 "Content-Length" "11"
                 "Proxy-Connection" "close"
                 "Date" "Thu, 31 Dec 2009 20:55:48 +0000")
-      :body "hello world")
+      :body "hello world"
+      :complete t)
     "proxy connection")
 
 (is (test-parser :response
@@ -967,7 +1031,8 @@
                 "Content-Type" "text/xml"
                 "Content-Length" "0"
                 "DCLK_imp" "v7;x;114750856;0-0;0;17820020;0/0;21603567/21621457/1;;~~okv=;dcmt=text/xml;;~~cs=o")
-      :body "")
+      :body ""
+      :complete t)
     "underscore header key")
 
 (is (test-parser :response
@@ -996,7 +1061,8 @@
                 "Content-Length" "0"
                 "Content-Type" "text/html; charset=UTF-8"
                 "Connection" "keep-alive")
-      :body "")
+      :body ""
+      :complete t)
     "bonjourmadame.fr")
 
 (is (test-parser :response
@@ -1030,7 +1096,8 @@
                 "Transfer-Encoding" "chunked"
                 "Content-Type" "text/html"
                 "Connection" "close")
-      :body "")
+      :body ""
+      :complete t)
     "field underscore")
 
 (is (test-parser :response
@@ -1047,7 +1114,8 @@
       :headers ("Date" "Fri, 5 Nov 2010 23:07:12 GMT+2"
                 "Content-Length" "0"
                 "Connection" "close")
-      :body "")
+      :body ""
+      :complete t)
     "non-ASCII in status line")
 
 (is (test-parser :response
@@ -1059,7 +1127,8 @@
       :http-minor 9
       :url nil
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "HTTP version 0.9")
 
 (is (test-parser :response
@@ -1073,7 +1142,8 @@
       :http-minor 1
       :url nil
       :headers ("Content-Type" "text/plain")
-      :body "hello world")
+      :body "hello world"
+      :complete t)
     "neither Content-Length nor Transfer-Encoding response")
 
 (is (test-parser :response
@@ -1086,7 +1156,8 @@
       :http-minor 0
       :url nil
       :headers ("Connection" "keep-alive")
-      :body "")
+      :body ""
+      :complete t)
     "HTTP/1.0 with keep-alive and EOF-terminated 200 status")
 
 (is (test-parser :response
@@ -1099,7 +1170,8 @@
       :http-minor 0
       :url nil
       :headers ("Connection" "keep-alive")
-      :body "")
+      :body ""
+      :complete t)
     "HTTP/1.0 with keep-alive and a 204 status")
 
 (is (test-parser :response
@@ -1111,7 +1183,8 @@
       :http-minor 1
       :url nil
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "HTTP/1.1 with an EOF-terminated 200 status")
 
 (is (test-parser :response
@@ -1123,7 +1196,8 @@
       :http-minor 1
       :url nil
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "HTTP/1.1 with a 204 status")
 
 (is (test-parser :response
@@ -1136,7 +1210,8 @@
       :http-minor 1
       :url nil
       :headers ("Connection" "close")
-      :body "")
+      :body ""
+      :complete t)
     "HTTP/1.1 with a 204 status and keep-alive disabled")
 
 (is (test-parser :response
@@ -1151,7 +1226,8 @@
       :http-minor 1
       :url nil
       :headers ("Transfer-Encoding" "chunked")
-      :body "")
+      :body ""
+      :complete t)
     "HTTP/1.1 with chunked endocing and a 200 response")
 
 (is (test-parser :response
@@ -1184,7 +1260,8 @@
                 "Vary" "Accept-Encoding,User-Agent"
                 "Content-Type" "text/html; charset=ISO-8859-1"
                 "Transfer-Encoding" "chunked")
-      :body #?"\n")
+      :body #?"\n"
+      :complete t)
     "amazon.com")
 
 (is (test-parser :response
@@ -1196,7 +1273,8 @@
       :http-minor 1
       :url nil
       :headers ()
-      :body "")
+      :body ""
+      :complete t)
     "empty reason phrase after space")
 
 (finalize)
