@@ -675,12 +675,11 @@ us a never-ending header that the application keeps buffering.")
 
                 (cond
                   ;; No HTTP version
-                  ((or (= (current) +cr+)
-                       (= (current) +lf+))
+                  ((= (current) +cr+)
                    (callback-data :url http callbacks data url-start-mark url-end-mark)
                    (advance)
                    (skip #\Newline))
-                  (T (multiple-value-bind (major minor next)
+                  (t (multiple-value-bind (major minor next)
                          (parse-http-version data (pos) end)
                        (declare (type pointer next))
                        (unless major
