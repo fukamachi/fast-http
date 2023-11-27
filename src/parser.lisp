@@ -474,7 +474,7 @@ us a never-ending header that the application keeps buffering.")
           (decf (http-content-length http) readable-count)
           (callback-data :body http callbacks data start end)
           (setf (http-mark http) end)
-          (values end (= readable-count 0))))))
+          (values end nil)))))
 
 (defun-speedy http-message-needs-eof-p (http)
   (let ((status-code (http-status http)))
@@ -622,9 +622,10 @@ us a never-ending header that the application keeps buffering.")
                (callback-notify :message-complete http callbacks)))))
       (error 'eof)))
 
-(defun-speedy parse-request (http callbacks data &key (start 0) end)
+(defun-speedy parse-request (http callbacks data &key (start 0) end (head-request nil))
   (declare (type http http)
-           (type simple-byte-vector data))
+           (type simple-byte-vector data)
+	   (ignore head-request))
   (let ((end (or end (length data))))
     (declare (type pointer start end))
     (handler-bind ((match-failed
@@ -728,7 +729,7 @@ us a never-ending header that the application keeps buffering.")
            (return-from parse-request (pos)))))
     (error 'eof)))
 
-(defun-speedy parse-response (http callbacks data &key (start 0) end)
+(defun-speedy parse-response (http callbacks data &key (start 0) end (head-request nil))
   (declare (type http http)
            (type simple-byte-vector data))
   (let ((end (or end
@@ -785,6 +786,11 @@ us a never-ending header that the application keeps buffering.")
                  (if (http-chunked-p http)
                      +state-chunk-size+
                      +state-body+))
+
+	   (when head-request
+	     (callback-notify :message-complete http callbacks)
+	     (setf (http-state http) +state-first-line+)
+	     (return-from parse-response (pos)))
 
          body
            (if (http-chunked-p http)
