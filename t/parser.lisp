@@ -488,6 +488,19 @@
     "request with no HTTP version")
 
 (is (test-parser :request
+                 #?"GET / #.(+ 1 1)\r\n"
+                 #?"\r\n")
+    '(:method :get
+      :status-code nil
+      :http-major 0
+      :http-minor 9
+      :url "/ #.(+ 1 1)"
+      :headers ()
+      :body ""
+      :complete t)
+    "request with invalid HTTP version")
+
+(is (test-parser :request
                  #?"M-SEARCH * HTTP/1.1\r\n"
                  #?"HOST: 239.255.255.250:1900\r\n"
                  #?"MAN: \"ssdp:discover\"\r\n"

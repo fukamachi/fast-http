@@ -675,7 +675,8 @@ us a never-ending header that the application keeps buffering.")
 
                 (cond
                   ;; No HTTP version
-                  ((= (current) +cr+)
+                  ((or (= (current) +cr+)
+                       (= (current) +lf+))
                    (callback-data :url http callbacks data url-start-mark url-end-mark)
                    (advance)
                    (skip #\Newline))
@@ -685,8 +686,11 @@ us a never-ending header that the application keeps buffering.")
                        (unless major
                          ;; Invalid HTTP version.
                          ;; Assuming it's also a part of URI.
-                         (setq url-end-mark (parse-url data next end))
-                         (go retry-url-parse))
+                         (let ((new-url-end-mark (parse-url data next end)))
+                           (when (= url-end-mark new-url-end-mark)
+                             (error 'invalid-version))
+                           (setq url-end-mark new-url-end-mark)
+                           (go retry-url-parse)))
                        (callback-data :url http callbacks data url-start-mark url-end-mark)
                        (setf (http-major-version http) major
                              (http-minor-version http) minor)
