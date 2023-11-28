@@ -100,7 +100,7 @@
            :invalid-parameter-value))
 (in-package :fast-http)
 
-(defun-careful make-parser (http &key first-line-callback header-callback body-callback finish-callback)
+(defun-careful make-parser (http &key first-line-callback header-callback body-callback finish-callback (head-request nil))
   (declare (type http http))
   (let (callbacks
 
@@ -217,7 +217,7 @@
                    end nil))
            (setf (http-mark http) start)
            (handler-case
-               (funcall parse-fn http callbacks (the simple-byte-vector data) :start start :end end)
+               (funcall parse-fn http callbacks (the simple-byte-vector data) :start start :end end :head-request head-request)
              (eof ()
                (setq data-buffer
                      (subseq data (http-mark http) (or end (length data)))))))))
