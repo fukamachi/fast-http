@@ -119,7 +119,7 @@
     (flet ((collect-prev-header-value ()
              (when header-value-buffer
                (let ((header-value
-                       (locally (declare (optimize (speed 3) (safety 0)))
+                       (progn
                          (coerce-to-string
                           (the (or octets-concatenated-xsubseqs
                                    octets-xsubseq)
@@ -197,7 +197,6 @@
                                  (setq completedp t)))))
 
     (lambda (data &key (start 0) end)
-      (declare (optimize (speed 3) (safety 2)))
       (cond
         ((eql data :eof)
          (setq completedp t)

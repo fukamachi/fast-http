@@ -22,8 +22,8 @@
 (in-package :fast-http.util)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defvar *insane-declaration* '(declare (optimize (speed 3) (safety 0) (space 0) (compilation-speed 0))))
-  (defvar *speedy-declaration* '(declare (optimize (speed 3) (safety 0) (space 0) (compilation-speed 0))))
+  (defvar *insane-declaration* '(declare (optimize (speed 3))))
+  (defvar *speedy-declaration* '(declare (optimize (speed 3))))
   (defvar *careful-declaration* '(declare (optimize (speed 3) (safety 2)))))
 
 (defmacro defun-insane (name lambda-list &body body)
@@ -163,15 +163,13 @@
 
 (declaim (inline %whitespacep))
 (defun %whitespacep (char)
-  (declare (type character char)
-           (optimize (speed 3) (safety 0)))
+  (declare (type character char))
   (or (char= char #\Space)
       (char= char #\Tab)))
 
 (declaim (inline position-not-whitespace))
 (defun position-not-whitespace (string &key from-end)
-  (declare (type #+ecl string #-ecl simple-string string)
-           (optimize (speed 3) (safety 0)))
+  (declare (type #+ecl string #-ecl simple-string string))
   (let* ((len (length string))
          (start (if from-end (1- len) 0))
          (end (if from-end 0 (1- len)))
@@ -185,8 +183,7 @@
 
 (declaim (inline number-string-p))
 (defun number-string-p (string)
-  (declare (type #+ecl string #-ecl simple-string string)
-           (optimize (speed 3) (safety 2)))
+  (declare (type #+ecl string #-ecl simple-string string))
   ;; empty string
   (when (zerop (length string))
     (return-from number-string-p nil))
@@ -195,8 +192,7 @@
     ;; spaces string
     (when (null end)
       (return-from number-string-p nil))
-    (locally (declare (type integer end)
-                      (optimize (safety 0)))
+    (locally (declare (type integer end))
       (incf end)
       (do ((i (the integer (or (position-not-whitespace string) 0)) (1+ i)))
           ((= i end) T)

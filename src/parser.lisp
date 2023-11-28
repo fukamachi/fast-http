@@ -227,7 +227,7 @@ us a never-ending header that the application keeps buffering.")
           (cond
             ((digit-byte-char-p (current))
              (setf (http-status http)
-                   (+ (the fixnum (* 10 (http-status http)))
+                   (+ (* 10 (http-status http))
                       (digit-byte-char-to-integer (current))))
              (when (< 999 (http-status http))
                (error 'invalid-status :status-code (http-status http))))
@@ -425,7 +425,8 @@ us a never-ending header that the application keeps buffering.")
          (error 'expect-failed))
        (values (1+ start) t)))))
 
-(defun-speedy parse-headers (http callbacks data start end)
+(defun parse-headers (http callbacks data start end)
+  (declare (optimize (debug 3)))
   (declare (type http http)
            (type simple-byte-vector data)
            (type pointer start end))
@@ -441,7 +442,7 @@ us a never-ending header that the application keeps buffering.")
 
         (setf (http-mark http) (pos))
         (loop
-          (when (= +max-header-line+ (the fixnum (incf (http-header-read http))))
+          (when (= +max-header-line+ (incf (http-header-read http)))
             (error 'header-overflow))
           (multiple-value-bind (next endp)
               (parse-header-line http callbacks data (pos) end)
@@ -459,7 +460,7 @@ us a never-ending header that the application keeps buffering.")
   (declare (type http http)
            (type simple-byte-vector data)
            (type pointer start end))
-  (let ((readable-count (the pointer (- end start))))
+  (let ((readable-count (- end start)))
     (declare (dynamic-extent readable-count)
              (type pointer readable-count))
     (if (<= (http-content-length http) readable-count)
@@ -805,8 +806,7 @@ us a never-ending header that the application keeps buffering.")
                                              header-value-callback
                                              header-parameter-key-callback
                                              header-parameter-value-callback)
-  (declare (type simple-string data)
-           (optimize (speed 3) (safety 2)))
+  (declare (type simple-string data))
 
   (let* ((header-name-mark 0)
          parameter-key-mark
@@ -821,17 +821,16 @@ us a never-ending header that the application keeps buffering.")
       (return-from parse-header-value-parameters 0))
 
     (macrolet ((go-state (state &optional (advance 1))
-                   `(locally (declare (optimize (speed 3) (safety 0)))
+                 `(locally
                       (incf p ,advance)
                       (when (= p end)
                         (go eof))
                       (setq char (aref data p))
                       (go ,state))))
       (flet ((tokenp (char)
-               (declare (optimize (speed 3) (safety 0)))
                (let ((byte (char-code char)))
                  (and (< byte 128)
-                      (not (char= (the character (aref +tokens+ byte)) #\Nul))))))
+                      (not (char= (aref +tokens+ byte) #\Nul))))))
         (tagbody
          parsing-header-value-start
            (case char
@@ -847,7 +846,7 @@ us a never-ending header that the application keeps buffering.")
            (case char
              (#\;
               (when header-value-callback
-                (funcall (the function header-value-callback)
+                (funcall header-value-callback
                          data header-name-mark p))
               (setq header-name-mark nil)
               (go-state looking-for-parameter-key))
@@ -868,7 +867,7 @@ us a never-ending header that the application keeps buffering.")
              (#\=
               (assert parameter-key-mark)
               (when header-parameter-key-callback
-                (funcall (the function header-parameter-key-callback)
+                (funcall header-parameter-key-callback
                          data parameter-key-mark p))
               (setq parameter-key-mark nil)
               (go-state parsing-parameter-value-start))
@@ -896,7 +895,7 @@ us a never-ending header that the application keeps buffering.")
                  (assert parameter-value-mark)
                  (setq parsing-quoted-string-p nil)
                  (when header-parameter-value-callback
-                   (funcall (the function header-parameter-value-callback)
+                   (funcall header-parameter-value-callback
                             data parameter-value-mark p))
                  (setq parameter-value-mark nil)
                  (go-state looking-for-parameter-key))
@@ -907,7 +906,7 @@ us a never-ending header that the application keeps buffering.")
              (#\;
               (assert parameter-value-mark)
               (when header-parameter-value-callback
-                (funcall (the function header-parameter-value-callback)
+                (funcall header-parameter-value-callback
                          data parameter-value-mark p))
               (setq parameter-value-mark nil)
               (go-state looking-for-parameter-key))
@@ -917,7 +916,7 @@ us a never-ending header that the application keeps buffering.")
          eof
            (when header-name-mark
              (when header-value-callback
-               (funcall (the function header-value-callback)
+               (funcall header-value-callback
                         data header-name-mark p)))
            (when parameter-key-mark
              (error 'invalid-eof-state))
@@ -925,6 +924,6 @@ us a never-ending header that the application keeps buffering.")
              (when parsing-quoted-string-p
                (error 'invalid-eof-state))
              (when header-parameter-value-callback
-               (funcall (the function header-parameter-value-callback)
+               (funcall header-parameter-value-callback
                         data parameter-value-mark p))))))
     p))
