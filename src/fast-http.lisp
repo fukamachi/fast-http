@@ -211,7 +211,7 @@
          (setq completedp t)
          (when finish-callback
            (funcall (the function finish-callback))))
-        (T
+        (t
          (locally (declare (type simple-byte-vector data)
                            (type pointer start))
            (check-type end (or null pointer))

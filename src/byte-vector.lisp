@@ -70,7 +70,7 @@
        (cond
          ((<= #.(char-code #\A) byte #.(char-code #\Z))
           (code-char (+ byte #x20)))
-         (T #+nil(<= #.(char-code #\a) byte #.(char-code #\z))
+         (t #+nil(<= #.(char-code #\a) byte #.(char-code #\z))
             (code-char byte)))))
 
 (defun alphanumeric-byte-char-p (byte)

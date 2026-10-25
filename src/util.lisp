@@ -54,7 +54,7 @@
                ((eq val 'otherwise) val)
                ((symbolp val) (symbol-value val))
                ((constantp val) val)
-               (T (error "CASEV can be used only with variables or constants")))))
+               (t (error "CASEV can be used only with variables or constants")))))
       `(case ,keyform
          ,@(loop for (val . clause) in clauses
                  if (eq val 'otherwise)
@@ -71,11 +71,11 @@
                ((eq val 'otherwise) val)
                ((symbolp val) (symbol-value val))
                ((constantp val) val)
-               (T (error "CASEV can be used only with variables or constants")))))
+               (t (error "CASEV can be used only with variables or constants")))))
       `(cond
          ,@(loop for (val . clause) in clauses
                  if (eq val 'otherwise)
-                   collect `(T ,@clause)
+                   collect `(t ,@clause)
                  else if (listp val)
                         collect `((or ,@(mapcar (lambda (val)
                                                   `(= ,keyform ,(get-val val)))
@@ -199,7 +199,7 @@
                       (optimize (safety 0)))
       (incf end)
       (do ((i (the integer (or (position-not-whitespace string) 0)) (1+ i)))
-          ((= i end) T)
+          ((= i end) t)
         (declare (type integer i))
         (let ((char (aref string i)))
           (declare (type character char))
@@ -211,4 +211,4 @@
              (when dot-read-p
                (return-from number-string-p nil))
              (setq dot-read-p t))
-            (T (return-from number-string-p nil))))))))
+            (t (return-from number-string-p nil))))))))

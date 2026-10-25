@@ -158,7 +158,7 @@
                                             (subseq data (max 0 (- p 2))))
                                (subseq data (max 0 (- p 2)))))
                      (go exit-loop))
-                    (T
+                    (t
                      (unless (search boundary data :start2 p :end2 end2)
                        ;; Still in the body
                        (when (ll-multipart-parser-body-mark parser)
