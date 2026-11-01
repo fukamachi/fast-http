@@ -393,4 +393,173 @@
       "黑客与画家(中文版).pdf")
   (is got-body (bv "abc") :test #'equalp))
 
+
+;;
+;; Part headers split across calls
+;;
+;; fast-http.parser::eof is not an ERROR, so it must never escape to the caller:
+;; it bypasses (handler-case ... (error ...)) in applications and servers.
+
+(defun parse-multipart-chunks (content-type chunks)
+  "Feed CHUNKS to a multipart parser one by one.
+Returns a list of (field-name sorted-headers-alist body-string) per part,
+or (:condition <type>) if any condition escaped."
+  (let ((parts '()))
+    (handler-case
+        (let ((parser (make-multipart-parser
+                       content-type
+                       (lambda (field-name headers field-meta body)
+                         (declare (ignore field-meta))
+                         (push (list field-name
+                                     (sort (loop for k being the hash-keys of headers
+                                                   using (hash-value v)
+                                                 collect (cons k v))
+                                           #'string< :key #'car)
+                                     (babel:octets-to-string (slurp-stream body)))
+                               parts)))))
+          (dolist (chunk chunks)
+            (funcall parser chunk))
+          (nreverse parts))
+      (condition (c)
+        (list :condition (type-of c))))))
+
+(let* ((content-type "multipart/form-data; boundary=AaB03x")
+       (data (bv (str #?"--AaB03x\r\n"
+                      #?"Content-Disposition: form-data; name=\"field1\"\r\n"
+                      #?"Content-Type: text/plain\r\n"
+                      #?"\r\n"
+                      #?"hello\r\n"
+                      #?"--AaB03x\r\n"
+                      #?"Content-Disposition: form-data; name=\"field2\"\r\n"
+                      #?"\r\n"
+                      #?"world\r\n"
+                      #?"--AaB03x--\r\n")))
+       (expected (parse-multipart-chunks content-type (list data))))
+  (flet ((header-region (from)
+           ;; From right after the delimiter line to the final LF of the blank
+           ;; line (splitting right after the blank line is a body-side case).
+           (let ((start (+ (search (bv #?"--AaB03x\r\n") data :start2 from) 10))
+                 (end (+ (search (bv #?"\r\n\r\n") data :start2 from) 4)))
+             (values start end)))
+         (failing-splits (start end)
+           (loop for i from start below end
+                 for got = (parse-multipart-chunks content-type
+                                                   (list (subseq data 0 i) (subseq data i)))
+                 unless (equal got expected)
+                   collect (cons i got))))
+    (is (length expected) 2 "sanity: two parts in a single call")
+    (multiple-value-bind (start end) (header-region 0)
+      (is (failing-splits start end) nil
+          "splitting inside the first part's headers gives the same result"))
+    (multiple-value-bind (start end) (header-region (search (bv "hello") data))
+      (is (failing-splits start end) nil
+          "splitting inside the second part's headers gives the same result"))))
+
+(let* ((fields 0)
+       (parser (make-ll-multipart-parser :boundary "AaB03x"))
+       (callbacks (make-callbacks
+                   :header-field (lambda (parser data start end)
+                                   (declare (ignore parser data start end))
+                                   (incf fields)))))
+  (http-multipart-parse parser callbacks
+                        (bv (str #?"--AaB03x\r\n"
+                                 #?"Content-Disposition: form-data; name=\"field1\"\r\n"
+                                 #?"Content-Ty")))
+  (http-multipart-parse parser callbacks
+                        (bv (str #?"pe: text/plain\r\n"
+                                 #?"\r\n"
+                                 #?"hello\r\n"
+                                 #?"--AaB03x--\r\n")))
+  (is fields 2 "each header-field callback fires once even when headers are split"))
+
+(is (parse-multipart-chunks "multipart/form-data; boundary=AaB03x"
+                            (list (bv (str #?"--AaB03x\r\n"
+                                           #?"Content-Disposition: form-da"))))
+    nil
+    "a body truncated inside part headers signals no condition")
+
+(is-error (let ((parser (make-multipart-parser "multipart/form-data; boundary=AaB03x"
+                                               (lambda (&rest args) (declare (ignore args))))))
+            (funcall parser (bv #?"--AaB03x\r\nX-Long: "))
+            (loop repeat 1024
+                  do (funcall parser (bv (make-string 1024 :initial-element #\a)))))
+          'fast-http.error:header-overflow
+          "an unterminated part header that keeps growing across calls is rejected")
+
+
+;;
+;; The result must not depend on how the input is split into calls
+
+(defun split-failures (content-type data)
+  "Split positions where feeding DATA in two calls differs from one call."
+  (let ((expected (parse-multipart-chunks content-type (list data))))
+    (loop for i from 1 below (length data)
+          for got = (parse-multipart-chunks content-type
+                                            (list (subseq data 0 i) (subseq data i)))
+          unless (equal got expected)
+            collect (cons i got))))
+
+(defun byte-chunks (data)
+  (loop for i from 0 below (length data)
+        collect (subseq data i (1+ i))))
+
+(let ((content-type "multipart/form-data; boundary=AaB03x")
+      (data (bv (str #?"--AaB03x\r\n"
+                     #?"Content-Disposition: form-data; name=\"field1\"\r\n"
+                     #?"\r\n"
+                     #?"hello\r\n"
+                     #?"--AaB03x\r\n"
+                     #?"Content-Disposition: form-data; name=\"field2\"\r\n"
+                     #?"\r\n"
+                     #?"world\r\n"
+                     #?"--AaB03x--\r\n")))
+      (expected '(("field1" (("content-disposition" . "form-data; name=\"field1\"")) "hello")
+                  ("field2" (("content-disposition" . "form-data; name=\"field2\"")) "world"))))
+  (is (parse-multipart-chunks content-type (list data)) expected
+      "two parts in a single call")
+  (is (split-failures content-type data) nil
+      "two parts: every 2-way split gives the same result")
+  (is (parse-multipart-chunks content-type (byte-chunks data)) expected
+      "two parts: fed one byte at a time"))
+
+;; Bodies containing byte sequences that look like a delimiter but are not.
+(let* ((content-type "multipart/form-data; boundary=AaB03x")
+       (body-a #?"AAAAA\r\n--AaB03xZZ\r\n--AaB0\r\n-\r\n\r\r\n")
+       (body-b #?"\r\n--")
+       (data (bv (str #?"--AaB03x\r\n"
+                      #?"Content-Disposition: form-data; name=\"a\"\r\n"
+                      #?"\r\n"
+                      body-a #?"\r\n"
+                      #?"--AaB03x\r\n"
+                      #?"Content-Disposition: form-data; name=\"b\"\r\n"
+                      #?"\r\n"
+                      body-b #?"\r\n"
+                      #?"--AaB03x--\r\n")))
+       (expected `(("a" (("content-disposition" . "form-data; name=\"a\"")) ,body-a)
+                   ("b" (("content-disposition" . "form-data; name=\"b\"")) ,body-b))))
+  (is (parse-multipart-chunks content-type (list data)) expected
+      "delimiter look-alikes in a single call")
+  (is (split-failures content-type data) nil
+      "delimiter look-alikes: every 2-way split gives the same result")
+  (is (parse-multipart-chunks content-type (byte-chunks data)) expected
+      "delimiter look-alikes: fed one byte at a time"))
+
+;; A long boundary, as browsers send (cf. a 1-byte chunk inside the boundary).
+(let* ((boundary "---------------------------186454651713519341951581030105")
+       (content-type (str "multipart/form-data; boundary=" boundary))
+       (data (bv (str "--" boundary #?"\r\n"
+                      #?"Content-Disposition: form-data; name=\"q\"\r\n"
+                      #?"\r\n"
+                      #?"Q\r\n--" boundary "BB" #?"\r\n"
+                      #?"\r\n"
+                      "--" boundary #?"--\r\n")))
+       (expected `(("q" (("content-disposition" . "form-data; name=\"q\""))
+                        ,(str #?"Q\r\n--" boundary "BB" #?"\r\n")))))
+  (is (parse-multipart-chunks content-type (list data)) expected
+      "long boundary in a single call")
+  (is (split-failures content-type data) nil
+      "long boundary: every 2-way split gives the same result")
+  (is (parse-multipart-chunks content-type (byte-chunks data)) expected
+      "long boundary: fed one byte at a time"))
+
 (finalize)

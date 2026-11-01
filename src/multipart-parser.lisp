@@ -9,12 +9,13 @@
                 :callbacks-message-begin
                 :callbacks-message-complete
                 :make-callbacks
-                :parse-headers)
+                :parse-headers
+                :eof)
   (:import-from :fast-http.http
                 :http-state
+                :http-mark
                 :make-http
-                :+state-headers+
-                :+state-body+)
+                :+state-headers+)
   (:import-from :fast-http.util
                 :tagcasev
                 :casev)
@@ -36,10 +37,24 @@
   (state 0 :type fixnum)
   (header-parser)
   boundary
+  ;; Start of the part body not sent to the body callback yet.
+  ;; NIL while no part is open (before the first delimiter, after the last).
   body-mark
-  body-buffer
+  ;; Position of the CR that may start a delimiter (\r\n--boundary).
   boundary-mark
-  boundary-buffer)
+  ;; Bytes at the end of the previous call that could not be decided yet
+  ;; (an incomplete delimiter or incomplete part headers). They are parsed
+  ;; again together with the data of the next call.
+  pending)
+
+(declaim (type fixnum +max-header-buffer-bytes+))
+(defconstant +max-header-buffer-bytes+ 8192
+  "Maximum number of bytes of an incomplete part header line that is
+kept between calls of HTTP-MULTIPART-PARSE.
+
+Without this limit an unterminated header line that keeps arriving in
+small chunks would be buffered without bound, and every call would copy
+and re-parse the whole buffer (O(N^2)).")
 
 #.`(eval-when (:compile-toplevel :load-toplevel :execute)
      ,@(loop for i from 0
@@ -68,31 +83,26 @@
     (declare (type simple-byte-vector boundary))
     (when (= start end)
       (return-from http-multipart-parse start))
+    ;; Parse the bytes kept at the end of the previous call again, together
+    ;; with the new data, so that a delimiter or part headers split across
+    ;; calls are seen as contiguous bytes.
+    (when-let (pending (ll-multipart-parser-pending parser))
+      (setf data (concatenate 'simple-byte-vector pending (subseq data start end))
+            start 0
+            end (length data)
+            (ll-multipart-parser-pending parser) nil))
 
-    (macrolet ((with-body-cb (callback &body body)
-                 `(handler-case (when-let (,callback (callbacks-body callbacks))
-                                  ,@body)
-                    (error (e)
-                      (error 'cb-body :error e))))
-               (call-body-cb (&optional (end '(ll-multipart-parser-boundary-mark parser)))
-                 (let ((g-end (gensym "END")))
-                   `(with-body-cb callback
-                      (when (ll-multipart-parser-body-buffer parser)
-                        (funcall callback parser
-                                 (ll-multipart-parser-body-buffer parser)
-                                 0 (length (ll-multipart-parser-body-buffer parser)))
-                        (setf (ll-multipart-parser-body-buffer parser) nil))
-                      (when-let (,g-end ,end)
-                        (funcall callback parser data
-                                 (ll-multipart-parser-body-mark parser)
-                                 ,g-end)))))
-               (flush-boundary-buffer ()
-                 `(with-body-cb callback
-                    (when (ll-multipart-parser-boundary-buffer parser)
-                      (funcall callback parser
-                               (ll-multipart-parser-boundary-buffer parser)
-                               0 (length (ll-multipart-parser-boundary-buffer parser)))
-                      (setf (ll-multipart-parser-boundary-buffer parser) nil)))))
+    (macrolet ((call-body-cb (&optional (end '(ll-multipart-parser-boundary-mark parser)))
+                 ;; Send DATA[BODY-MARK, END) to the body callback.
+                 (let ((g-start (gensym "START"))
+                       (g-end (gensym "END")))
+                   `(let ((,g-start (ll-multipart-parser-body-mark parser))
+                          (,g-end ,end))
+                      (when (< ,g-start ,g-end)
+                        (handler-case (when-let (callback (callbacks-body callbacks))
+                                        (funcall callback parser data ,g-start ,g-end))
+                          (error (e)
+                            (error 'cb-body :error e))))))))
       (let* ((p start)
              (byte (aref data p)))
         #+fast-http-debug
@@ -127,44 +137,16 @@
 
                (+parsing-delimiter+
                 (let ((end2 (+ p boundary-length)))
-                  (cond
-                    ((ll-multipart-parser-boundary-buffer parser)
-                     (when (< (+ end (length (ll-multipart-parser-boundary-buffer parser)) -3) end2)
-                       (setf (ll-multipart-parser-boundary-buffer parser)
-                             (concatenate 'simple-byte-vector
-                                          (ll-multipart-parser-boundary-buffer parser)
-                                          data))
-                       (go exit-loop))
-                     (let ((data2 (make-array boundary-length :element-type '(unsigned-byte 8)))
-                           (boundary-buffer-length (length (ll-multipart-parser-boundary-buffer parser))))
-                       (replace data2 (ll-multipart-parser-boundary-buffer parser)
-                                :start2 2)
-                       (replace data2 data
-                                :start1 (- boundary-buffer-length 2))
-                       (unless (search boundary data2)
-                         ;; Still in the body
-                         (when (ll-multipart-parser-body-mark parser)
-                           (call-body-cb nil)
-                           (flush-boundary-buffer)
-                           (go-state +looking-for-delimiter+))
-                         (error 'invalid-boundary))
-                       (go-state +parsing-delimiter-end+ (- boundary-length boundary-buffer-length -2))))
-                    ((< (1- end) end2)
-                     ;; EOF
-                     (setf (ll-multipart-parser-boundary-buffer parser)
-                           (if (ll-multipart-parser-boundary-buffer parser)
-                               (concatenate 'simple-byte-vector
-                                            (ll-multipart-parser-boundary-buffer parser)
-                                            (subseq data (max 0 (- p 2))))
-                               (subseq data (max 0 (- p 2)))))
-                     (go exit-loop))
-                    (T
-                     (unless (search boundary data :start2 p :end2 end2)
-                       ;; Still in the body
-                       (when (ll-multipart-parser-body-mark parser)
-                         (go-state +looking-for-delimiter+))
-                       (error 'invalid-boundary))
-                     (go-state +parsing-delimiter-end+ boundary-length)))))
+                  (when (< end end2)
+                    ;; The rest of the boundary is in the next call.
+                    (go exit-loop))
+                  (when (mismatch boundary data :start2 p :end2 end2)
+                    ;; Still in the body. Re-examine this byte: it may be
+                    ;; the CR of the real delimiter.
+                    (when (ll-multipart-parser-body-mark parser)
+                      (go-state +looking-for-delimiter+ 0))
+                    (error 'invalid-boundary))
+                  (go-state +parsing-delimiter-end+ boundary-length)))
 
                (+parsing-delimiter-end+
                 (casev byte
@@ -174,9 +156,7 @@
                   (otherwise
                    ;; Still in the body
                    (when (ll-multipart-parser-body-mark parser)
-                     (call-body-cb nil)
-                     (flush-boundary-buffer)
-                     (go-state +looking-for-delimiter+))
+                     (go-state +looking-for-delimiter+ 0))
                    (error 'invalid-boundary))))
 
                (+parsing-delimiter-almost-done+
@@ -184,8 +164,7 @@
                   (error 'invalid-boundary))
                 (when (ll-multipart-parser-body-mark parser)
                   ;; got a part
-                  (when (ll-multipart-parser-boundary-mark parser)
-                    (call-body-cb))
+                  (call-body-cb)
                   (when-let (callback (callbacks-message-complete callbacks))
                     (handler-case (funcall callback parser)
                       (error (e)
@@ -201,19 +180,36 @@
                 (go-state +header-field-start+ 0))
 
                (+header-field-start+
-                (let ((next (parse-headers header-parser callbacks data p end)))
+                (let ((next (handler-case
+                                (progn
+                                  (setf (http-mark header-parser) p)
+                                  (parse-headers header-parser callbacks data p end))
+                              (eof ()
+                                ;; The part headers continue in the next call.
+                                ;; Keep the bytes from the last complete header line
+                                ;; (HTTP-MARK) and resume from there on the next call.
+                                ;; EOF is not an ERROR, so it must not escape.
+                                (let ((rest (subseq data (http-mark header-parser) end)))
+                                  (when (< +max-header-buffer-bytes+ (length rest))
+                                    (error 'header-overflow))
+                                  (setf (ll-multipart-parser-pending parser) rest))
+                                (go exit-loop)))))
                   (setq p (1- next)) ;; XXX
                   ;; parsing headers done
-                  (when (= (http-state header-parser) +state-body+)
-                    (when-let (callback (callbacks-headers-complete callbacks))
-                      (handler-case (funcall callback parser)
-                        (error (e)
-                          (error 'cb-headers-complete :error e))))
-                    (setf (http-state header-parser) +state-headers+))
+                  ;; PARSE-HEADERS only returns at the end of the headers.
+                  ;; Don't rely on HTTP-STATE: it is not set to +STATE-BODY+
+                  ;; when the call starts at the blank line, which happens when
+                  ;; resuming headers split right before the final CRLF.
+                  (when-let (callback (callbacks-headers-complete callbacks))
+                    (handler-case (funcall callback parser)
+                      (error (e)
+                        (error 'cb-headers-complete :error e))))
+                  (setf (http-state header-parser) +state-headers+)
                   (go-state +body-start+ 0)))
 
                (+body-start+
-                (setf (ll-multipart-parser-body-mark parser) (1+ p))
+                (setf (ll-multipart-parser-body-mark parser) (1+ p)
+                      (ll-multipart-parser-boundary-mark parser) nil)
                 (go-state +looking-for-delimiter+))
 
                (+looking-for-delimiter+
@@ -223,24 +219,23 @@
                         (go-state +maybe-delimiter-start+))
                   (otherwise (go-state +looking-for-delimiter+))))
 
+               ;; In the following states, a byte that doesn't continue the
+               ;; delimiter is re-examined by +LOOKING-FOR-DELIMITER+ (advance 0)
+               ;; because it may be the CR of the real delimiter.
                (+maybe-delimiter-start+
                 (unless (= byte +lf+)
                   (go-state +looking-for-delimiter+ 0))
                 (go-state +maybe-delimiter-first-dash+))
 
-	       (+maybe-delimiter-first-dash+
-                (if (= byte +dash+)
-                    (go-state +maybe-delimiter-second-dash+)
-		    (if (= byte +cr+)
-			(progn
-			  (setf (ll-multipart-parser-boundary-mark parser) p)
-			  (go-state +maybe-delimiter-start+))
-			(go-state +looking-for-delimiter+))))
+               (+maybe-delimiter-first-dash+
+                (unless (= byte +dash+)
+                  (go-state +looking-for-delimiter+ 0))
+                (go-state +maybe-delimiter-second-dash+))
 
                (+maybe-delimiter-second-dash+
-                (if (= byte +dash+)
-                    (go-state +parsing-delimiter+)
-                    (go-state +looking-for-delimiter+)))
+                (unless (= byte +dash+)
+                  (go-state +looking-for-delimiter+ 0))
+                (go-state +parsing-delimiter+))
 
                (+body-almost-done+
                 (casev byte
@@ -250,7 +245,6 @@
                (+body-done+
                 (when (ll-multipart-parser-body-mark parser)
                   ;; got a part
-                  (setf (ll-multipart-parser-body-buffer parser) nil)
                   (call-body-cb)
                   (when-let (callback (callbacks-message-complete callbacks))
                     (handler-case (funcall callback parser)
@@ -259,20 +253,29 @@
                   (setf (ll-multipart-parser-body-mark parser) nil))
                 (go exit-loop))))
          exit-loop)
-        (when (ll-multipart-parser-body-mark parser)
-          (when (<= +looking-for-delimiter+
-                    (ll-multipart-parser-state parser)
-                    +maybe-delimiter-second-dash+)
-            (call-body-cb (or (ll-multipart-parser-boundary-mark parser) p)))
-          ;; buffer the last part
-          (when (ll-multipart-parser-boundary-mark parser)
-            (setf (ll-multipart-parser-body-buffer parser)
-                  (if (ll-multipart-parser-body-buffer parser)
-                      (concatenate 'simple-byte-vector
-                                   (ll-multipart-parser-body-buffer parser)
-                                   (subseq data (ll-multipart-parser-boundary-mark parser)))
-                      (subseq data (ll-multipart-parser-boundary-mark parser)))))
-
-          (setf (ll-multipart-parser-body-mark parser) 0
-                (ll-multipart-parser-boundary-mark parser) nil))
+        (let ((state (ll-multipart-parser-state parser)))
+          (declare (type fixnum state))
+          (cond
+            ((null (ll-multipart-parser-body-mark parser))
+             ;; The first delimiter is incomplete: parse it again from the
+             ;; beginning on the next call.
+             (when (or (<= +parsing-delimiter-dash+ state +parsing-delimiter-almost-done+)
+                       (= state +body-almost-done+))
+               (setf (ll-multipart-parser-pending parser) (subseq data start end)
+                     (ll-multipart-parser-state parser) +parsing-delimiter-dash-start+)))
+            ((= state +looking-for-delimiter+)
+             ;; In the middle of a part body.
+             (call-body-cb p))
+            ((or (<= +parsing-delimiter+ state +parsing-delimiter-almost-done+)
+                 (<= +maybe-delimiter-start+ state +body-almost-done+))
+             ;; A delimiter may start at BOUNDARY-MARK but is incomplete.
+             ;; Send the body before it and parse the rest again on the next call.
+             (call-body-cb)
+             (setf (ll-multipart-parser-pending parser)
+                   (subseq data (ll-multipart-parser-boundary-mark parser) end)
+                   (ll-multipart-parser-state parser) +looking-for-delimiter+)))
+          ;; Positions are relative to DATA, which is gone on the next call.
+          (when (ll-multipart-parser-body-mark parser)
+            (setf (ll-multipart-parser-body-mark parser) 0))
+          (setf (ll-multipart-parser-boundary-mark parser) nil))
         p))))
