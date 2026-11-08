@@ -821,7 +821,21 @@ operations per extension line rather than unbounded.")
 
          body
            (if (http-chunked-p http)
-               (advance-to* (parse-chunked-body http callbacks data (pos) end))
+               (progn
+                 (advance-to* (parse-chunked-body http callbacks data (pos) end))
+                 ;; A completed chunked message resets the state to
+                 ;; +state-first-line+ (in parse-chunked-body's trailing-headers
+                 ;; step).  Continue with any pipelined request that follows,
+                 ;; exactly as the Content-Length path does below, so the parse
+                 ;; does not depend on how the stream was split across calls.
+                 ;; Bytes left over after a chunked body were otherwise dropped
+                 ;; when the whole stream arrived in one buffer but parsed as a
+                 ;; fresh request when they arrived in a later call.  The (not
+                 ;; (eofp)) guard avoids re-entering the first line at end of
+                 ;; buffer, which would fire message-begin and clear completedp.
+                 (when (and (= (http-state http) +state-first-line+)
+                            (not (eofp)))
+                   (go first-line)))
                (progn
                  (and (advance-to* (parse-body http callbacks data (pos) end t))
                       (go first-line))))
@@ -897,7 +911,14 @@ operations per extension line rather than unbounded.")
 
          body
            (if (http-chunked-p http)
-               (advance-to* (parse-chunked-body http callbacks data (pos) end))
+               (progn
+                 (advance-to* (parse-chunked-body http callbacks data (pos) end))
+                 ;; Continue with any pipelined response after a completed chunked
+                 ;; body, mirroring the Content-Length path, so the parse does not
+                 ;; depend on how the stream was split across calls.
+                 (when (and (= (http-state http) +state-first-line+)
+                            (not (eofp)))
+                   (go first-line)))
                (progn
                  (advance-to* (parse-body http callbacks data (pos) end nil))
                  (unless (eofp)

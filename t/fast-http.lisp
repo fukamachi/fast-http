@@ -689,4 +689,43 @@ you?\r
         (funcall parser bad-request))
       (ok (http-error-p http) "http-error-p is t after parsing error"))))
 
+;; A header or request line that never terminates must not be buffered without
+;; bound across calls; past *max-header-line-bytes* make-parser must signal
+;; header-overflow rather than keep growing the buffer.
+(subtest "streaming header-line byte limit"
+  (let* ((limit fast-http:*max-header-line-bytes*)
+         (part (make-string (floor (* limit 6) 10) :initial-element #\a)))
+
+    ;; Case 1: an unterminated header value fed in two calls whose combined
+    ;; length exceeds the limit signals header-overflow instead of buffering.
+    (is-error
+     (let* ((http (make-http-request))
+            (parser (make-parser http)))
+       (funcall parser (babel:string-to-octets
+                        (concatenate 'string #?"GET / HTTP/1.1\r\nX: " part)))
+       (funcall parser (babel:string-to-octets part)))
+     'fast-http.error:header-overflow
+     "unterminated header line past the byte limit signals header-overflow")
+
+    ;; Case 2: an unterminated request line (a long URL) is bounded the same way.
+    (is-error
+     (let* ((http (make-http-request))
+            (parser (make-parser http)))
+       (funcall parser (babel:string-to-octets (concatenate 'string "GET /" part)))
+       (funcall parser (babel:string-to-octets part)))
+     'fast-http.error:header-overflow
+     "unterminated request line past the byte limit signals header-overflow")
+
+    ;; Case 3: a large header line within the limit, split across calls, is
+    ;; still accepted -- the cap must not break legitimate big headers.
+    (ok
+     (let* ((http (make-http-request))
+            (parser (make-parser http))
+            (val (make-string (floor limit 4) :initial-element #\a)))
+       (funcall parser (babel:string-to-octets
+                        (concatenate 'string #?"GET / HTTP/1.1\r\nX: " val)))
+       (funcall parser (babel:string-to-octets (concatenate 'string val #?"\r\n\r\n")))
+       t)
+     "a large header line within the limit is accepted across calls")))
+
 (finalize)

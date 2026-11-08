@@ -20,6 +20,7 @@
                 :write-to-buffer
                 :finalize-buffer)
   (:export :make-parser
+           :*max-header-line-bytes*
            :http-request
            :http-response
            :make-http-request
@@ -105,6 +106,12 @@
            :invalid-parameter-key
            :invalid-parameter-value))
 (in-package :fast-http)
+
+(defparameter *max-header-line-bytes* 65536
+  "Maximum bytes buffered for one incomplete header or request/status line.
+
+Past this bound make-parser signals header-overflow rather than buffering, so a
+line that never terminates cannot grow the buffer until the heap is exhausted.")
 
 (defun-careful make-parser (http &key first-line-callback header-callback body-callback finish-callback (head-request nil))
   (declare (type http http))
@@ -227,8 +234,13 @@
            (handler-case
                (funcall parse-fn http callbacks (the simple-byte-vector data) :start start :end end :head-request head-request)
              (eof ()
-               (setq data-buffer
-                     (subseq data (http-mark http) (or end (length data)))))
+               (let ((buffered (subseq data (http-mark http) (or end (length data)))))
+                 ;; The mark advances per completed line, so this tail is one
+                 ;; incomplete line; bounding it bounds a single header/request line.
+                 (when (> (length buffered) *max-header-line-bytes*)
+                   (setf (http-error-p http) t)
+                   (error 'header-overflow))
+                 (setq data-buffer buffered)))
              (parsing-error (e)
                (setf (http-error-p http) t)
                (error e))))))
