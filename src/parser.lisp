@@ -823,16 +823,11 @@ operations per extension line rather than unbounded.")
            (if (http-chunked-p http)
                (progn
                  (advance-to* (parse-chunked-body http callbacks data (pos) end))
-                 ;; A completed chunked message resets the state to
-                 ;; +state-first-line+ (in parse-chunked-body's trailing-headers
-                 ;; step).  Continue with any pipelined request that follows,
-                 ;; exactly as the Content-Length path does below, so the parse
-                 ;; does not depend on how the stream was split across calls.
-                 ;; Bytes left over after a chunked body were otherwise dropped
-                 ;; when the whole stream arrived in one buffer but parsed as a
-                 ;; fresh request when they arrived in a later call.  The (not
-                 ;; (eofp)) guard avoids re-entering the first line at end of
-                 ;; buffer, which would fire message-begin and clear completedp.
+                 ;; Continue with any pipelined request after a completed chunked
+                 ;; body (state is then +state-first-line+), like the
+                 ;; Content-Length path below, so the parse does not depend on
+                 ;; chunk boundaries.  (not (eofp)) keeps message-begin from
+                 ;; re-firing at end of buffer and clearing completedp.
                  (when (and (= (http-state http) +state-first-line+)
                             (not (eofp)))
                    (go first-line)))
@@ -914,8 +909,8 @@ operations per extension line rather than unbounded.")
                (progn
                  (advance-to* (parse-chunked-body http callbacks data (pos) end))
                  ;; Continue with any pipelined response after a completed chunked
-                 ;; body, mirroring the Content-Length path, so the parse does not
-                 ;; depend on how the stream was split across calls.
+                 ;; body, like the Content-Length path, so the parse does not
+                 ;; depend on chunk boundaries.
                  (when (and (= (http-state http) +state-first-line+)
                             (not (eofp)))
                    (go first-line)))

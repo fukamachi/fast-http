@@ -728,4 +728,31 @@ you?\r
        t)
      "a large header line within the limit is accepted across calls")))
 
+;; The requests parsed after a chunked body must not depend on how the stream is
+;; split across calls, otherwise the same bytes yield different requests by TCP
+;; segmentation -- a request-smuggling / desync primitive.
+(subtest "chunked body does not desync pipelined requests"
+  (labels ((collect (chunks)
+             ;; The list of (method . resource) make-parser dispatches for CHUNKS.
+             (let* ((reqs '())
+                    (http (make-http-request))
+                    (parser (make-parser http
+                                         :first-line-callback
+                                         (lambda ()
+                                           (push (cons (http-method http)
+                                                       (http-resource http))
+                                                 reqs)))))
+               (dolist (c chunks (nreverse reqs))
+                 (funcall parser (babel:string-to-octets c))))))
+    (let ((seg1 #?"POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nGET /a HTTP/1.1\r\nHost: x\r\n\r\n")
+          (seg2 #?"GET /b HTTP/1.1\r\nHost: x\r\n\r\n"))
+      (is (collect (list (concatenate 'string seg1 seg2)))
+          (collect (list seg1 seg2))
+          "same requests whether the stream after a chunked body is split or not"
+          :test #'equal)
+      (is (collect (list (concatenate 'string seg1 seg2)))
+          '((:POST . "/") (:GET . "/a") (:GET . "/b"))
+          "every pipelined request after the chunked body is parsed"
+          :test #'equal))))
+
 (finalize)
