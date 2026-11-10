@@ -562,4 +562,39 @@ or (:condition <type>) if any condition escaped."
   (is (parse-multipart-chunks content-type (byte-chunks data)) expected
       "long boundary: fed one byte at a time"))
 
+;; The return value counts the bytes passed in THIS call, even when bytes kept
+;; from a previous call are re-parsed together with them. A caller that advances
+;; its own cursor by the return value must not be sent past the data it passed.
+(let ((parser (make-ll-multipart-parser :boundary "AaB03x"))
+      (callbacks (make-callbacks
+                  :body (lambda (parser data start end)
+                          (declare (ignore parser data start end))))))
+  ;; Open a part body.
+  (http-multipart-parse parser callbacks
+                        (bv (str #?"--AaB03x\r\n"
+                                 #?"Content-Disposition: form-data; name=\"a\"\r\n"
+                                 #?"\r\n"
+                                 #?"hello")))
+  ;; A lone CR may start a delimiter, so it is kept for the next call.
+  (http-multipart-parse parser callbacks (bv #?"\r"))
+  ;; The kept CR is re-parsed with this 1-byte call, but the return value must
+  ;; be 1 (the length of this call's data), not 2 (kept byte + this byte).
+  (is (http-multipart-parse parser callbacks (bv "Z")) 1
+      "the return value is relative to this call's data, not the re-parsed bytes"))
+
+;; A folded (obs-fold) part header: a header value continued on the next line.
+;; It parses in a single call, so it must parse the same across any split.
+(let* ((content-type "multipart/form-data; boundary=AaB03x")
+       (data (bv (str #?"--AaB03x\r\n"
+                      #?"Content-Disposition: form-data;\r\n"
+                      #?" name=\"a\"\r\n"
+                      #?"\r\n"
+                      #?"hello\r\n"
+                      #?"--AaB03x--\r\n")))
+       (expected (parse-multipart-chunks content-type (list data))))
+  (is (split-failures content-type data) nil
+      "folded header: every 2-way split gives the same result")
+  (is (parse-multipart-chunks content-type (byte-chunks data)) expected
+      "folded header: fed one byte at a time"))
+
 (finalize)

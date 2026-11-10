@@ -85,11 +85,16 @@ and re-parse the whole buffer (O(N^2)).")
       (return-from http-multipart-parse start))
     ;; Parse the bytes kept at the end of the previous call again, together
     ;; with the new data, so that a delimiter or part headers split across
-    ;; calls are seen as contiguous bytes.
-    (when-let (pending (ll-multipart-parser-pending parser))
+    ;; calls are seen as contiguous bytes. ORIG-START and PREPENDED record how
+    ;; the coordinates shifted, so the position returned to the caller stays
+    ;; relative to the data of THIS call (see the end of the function).
+    (let ((orig-start start)
+          (prepended 0))
+     (when-let (pending (ll-multipart-parser-pending parser))
       (setf data (concatenate 'simple-byte-vector pending (subseq data start end))
             start 0
             end (length data)
+            prepended (length pending)
             (ll-multipart-parser-pending parser) nil))
 
     (macrolet ((call-body-cb (&optional (end '(ll-multipart-parser-boundary-mark parser)))
@@ -180,26 +185,37 @@ and re-parse the whole buffer (O(N^2)).")
                 (go-state +header-field-start+ 0))
 
                (+header-field-start+
-                (let ((next (handler-case
-                                (progn
-                                  (setf (http-mark header-parser) p)
-                                  (parse-headers header-parser callbacks data p end))
-                              (eof ()
-                                ;; The part headers continue in the next call.
-                                ;; Keep the bytes from the last complete header line
-                                ;; (HTTP-MARK) and resume from there on the next call.
-                                ;; EOF is not an ERROR, so it must not escape.
-                                (let ((rest (subseq data (http-mark header-parser) end)))
-                                  (when (< +max-header-buffer-bytes+ (length rest))
-                                    (error 'header-overflow))
-                                  (setf (ll-multipart-parser-pending parser) rest))
-                                (go exit-loop)))))
+                ;; P is the first byte of this part's header block, and bytes
+                ;; kept from an earlier call were prepended at the top of this
+                ;; function, so [P, END) holds every header byte received for
+                ;; this part so far.
+                ;;
+                ;; First probe the block with a throwaway parser that runs no
+                ;; callbacks. If the headers are incomplete, keep the whole
+                ;; block and probe it again next call; only once PARSE-HEADERS
+                ;; consumes the block without signalling EOF is it parsed for
+                ;; real. Re-parsing the whole block each time, rather than
+                ;; resuming from the last complete line, keeps the result
+                ;; independent of how the input is split -- including a header
+                ;; value folded onto a later line (obs-fold), whose
+                ;; continuation cannot be resumed from its own start.
+                ;; EOF is not an ERROR, so it must never escape to the caller.
+                (handler-case
+                    (let ((probe (make-http)))
+                      (setf (http-state probe) +state-headers+)
+                      (parse-headers probe (make-callbacks) data p end))
+                  (eof ()
+                    (let ((rest (subseq data p end)))
+                      (when (< +max-header-buffer-bytes+ (length rest))
+                        (error 'header-overflow))
+                      (setf (ll-multipart-parser-pending parser) rest))
+                    (go exit-loop)))
+                ;; The headers are complete in [P, END): parse them once for
+                ;; real. PARSE-HEADERS only returns at the end of the headers.
+                (setf (http-mark header-parser) p
+                      (http-state header-parser) +state-headers+)
+                (let ((next (parse-headers header-parser callbacks data p end)))
                   (setq p (1- next)) ;; XXX
-                  ;; parsing headers done
-                  ;; PARSE-HEADERS only returns at the end of the headers.
-                  ;; Don't rely on HTTP-STATE: it is not set to +STATE-BODY+
-                  ;; when the call starts at the blank line, which happens when
-                  ;; resuming headers split right before the final CRLF.
                   (when-let (callback (callbacks-headers-complete callbacks))
                     (handler-case (funcall callback parser)
                       (error (e)
@@ -278,4 +294,11 @@ and re-parse the whole buffer (O(N^2)).")
           (when (ll-multipart-parser-body-mark parser)
             (setf (ll-multipart-parser-body-mark parser) 0))
           (setf (ll-multipart-parser-boundary-mark parser) nil))
-        p))))
+        ;; P indexes DATA, which may begin with bytes re-parsed from the
+        ;; previous call. Return a position relative to the data passed in
+        ;; THIS call, so a caller advancing its own cursor is never sent past
+        ;; the data it gave (a position inside the re-parsed bytes means none
+        ;; of this call's data was consumed, so return its start).
+        (if (zerop prepended)
+            p
+            (max orig-start (+ orig-start (- p prepended)))))))))
