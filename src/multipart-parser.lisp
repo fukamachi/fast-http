@@ -47,14 +47,19 @@
   ;; again together with the data of the next call.
   pending)
 
-(declaim (type fixnum +max-header-buffer-bytes+))
-(defconstant +max-header-buffer-bytes+ 8192
-  "Maximum number of bytes of an incomplete part header line that is
-kept between calls of HTTP-MULTIPART-PARSE.
+(declaim (type fixnum +max-part-header-bytes+))
+(defconstant +max-part-header-bytes+ 8192
+  "Maximum size in bytes of one part's header block, from its first byte
+through the blank line that ends it. A larger block signals HEADER-OVERFLOW.
 
-Without this limit an unterminated header line that keeps arriving in
-small chunks would be buffered without bound, and every call would copy
-and re-parse the whole buffer (O(N^2)).")
+Incomplete part headers are kept between calls of HTTP-MULTIPART-PARSE and
+re-parsed with the next data. Without this limit headers that keep arriving
+in small chunks would be buffered without bound, and every call would copy
+and re-parse the whole buffer (O(N^2)).
+
+The limit applies to the whole block whether it arrives in one call or is
+split across calls, so whether a request is accepted does not depend on
+where the input is split.")
 
 #.`(eval-when (:compile-toplevel :load-toplevel :execute)
      ,@(loop for i from 0
@@ -200,16 +205,25 @@ and re-parse the whole buffer (O(N^2)).")
                 ;; value folded onto a later line (obs-fold), whose
                 ;; continuation cannot be resumed from its own start.
                 ;; EOF is not an ERROR, so it must never escape to the caller.
-                (handler-case
-                    (let ((probe (make-http)))
-                      (setf (http-state probe) +state-headers+)
-                      (parse-headers probe (make-callbacks) data p end))
-                  (eof ()
-                    (let ((rest (subseq data p end)))
-                      (when (< +max-header-buffer-bytes+ (length rest))
-                        (error 'header-overflow))
-                      (setf (ll-multipart-parser-pending parser) rest))
-                    (go exit-loop)))
+                ;;
+                ;; +MAX-PART-HEADER-BYTES+ bounds the whole block, checked the
+                ;; same way when it is complete and when it is kept for the
+                ;; next call. Every byte kept is part of the block, so a kept
+                ;; prefix exceeds the limit only if the whole block would; the
+                ;; verdict does not depend on how the input is split.
+                (let ((header-end
+                        (handler-case
+                            (let ((probe (make-http)))
+                              (setf (http-state probe) +state-headers+)
+                              (parse-headers probe (make-callbacks) data p end))
+                          (eof ()
+                            (when (< +max-part-header-bytes+ (- end p))
+                              (error 'header-overflow))
+                            (setf (ll-multipart-parser-pending parser)
+                                  (subseq data p end))
+                            (go exit-loop)))))
+                  (when (< +max-part-header-bytes+ (- header-end p))
+                    (error 'header-overflow)))
                 ;; The headers are complete in [P, END): parse them once for
                 ;; real. PARSE-HEADERS only returns at the end of the headers.
                 (setf (http-mark header-parser) p

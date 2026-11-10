@@ -597,4 +597,41 @@ or (:condition <type>) if any condition escaped."
   (is (parse-multipart-chunks content-type (byte-chunks data)) expected
       "folded header: fed one byte at a time"))
 
+;; The part header size limit covers the whole header block and gives the same
+;; verdict however the block is split: a block of exactly the limit is accepted
+;; and one byte more is rejected, in a single call, at every 2-way split, and fed
+;; one byte at a time. (Applying the limit only to the bytes kept between calls
+;; would reject a split request that is accepted in a single call.)
+(flet ((data-with-header-block (size)
+         ;; A part whose header block (first header byte through the blank
+         ;; line) is exactly SIZE bytes.
+         (let* ((fixed (str #?"Content-Disposition: form-data; name=\"a\"\r\n"
+                            #?"X-Pad: \r\n"
+                            #?"\r\n"))
+                (pad (make-string (- size (length fixed)) :initial-element #\a)))
+           (bv (str #?"--AaB03x\r\n"
+                    #?"Content-Disposition: form-data; name=\"a\"\r\n"
+                    #?"X-Pad: " pad #?"\r\n"
+                    #?"\r\n"
+                    #?"hello\r\n"
+                    #?"--AaB03x--\r\n")))))
+  (let ((content-type "multipart/form-data; boundary=AaB03x")
+        (limit fast-http.multipart-parser::+max-part-header-bytes+))
+    (let ((data (data-with-header-block limit)))
+      (is (car (first (parse-multipart-chunks content-type (list data)))) "a"
+          "a part header block of exactly the limit is accepted in a single call")
+      (is (split-failures content-type data) nil
+          "a part header block of exactly the limit: every 2-way split gives the same result")
+      (is (car (first (parse-multipart-chunks content-type (byte-chunks data)))) "a"
+          "a part header block of exactly the limit: fed one byte at a time"))
+    (let ((data (data-with-header-block (1+ limit))))
+      (is (parse-multipart-chunks content-type (list data))
+          '(:condition fast-http.error:header-overflow)
+          "a part header block over the limit is rejected in a single call")
+      (is (split-failures content-type data) nil
+          "a part header block over the limit: every 2-way split gives the same result")
+      (is (parse-multipart-chunks content-type (byte-chunks data))
+          '(:condition fast-http.error:header-overflow)
+          "a part header block over the limit: fed one byte at a time"))))
+
 (finalize)
