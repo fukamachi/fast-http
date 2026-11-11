@@ -728,6 +728,119 @@ you?\r
        t)
      "a large header line within the limit is accepted across calls")))
 
+;; An incomplete line kept between calls must not be parsed again until a byte
+;; that can end it arrives: re-parsing it on every call makes a long line fed in
+;; small pieces cost O(N^2).
+(subtest "streaming header line cost is linear in its length"
+  (labels ((feed-bytewise (octets)
+             (let ((parser (make-parser (make-http-request))))
+               (loop for i from 0 below (length octets)
+                     do (funcall parser octets :start i :end (1+ i)))))
+           (seconds-to-feed (octets)
+             ;; Best of three, to keep GC pauses from deciding the result.
+             (loop repeat 3
+                   minimize (let ((t0 (get-internal-real-time)))
+                              (feed-bytewise octets)
+                              (/ (- (get-internal-real-time) t0)
+                                 internal-time-units-per-second)))))
+    (let* ((size 60000)
+           (one-long-line
+            (babel:string-to-octets
+             (concatenate 'string #?"GET / HTTP/1.1\r\nX: "
+                          (make-string size :initial-element #\a)
+                          #?"\r\n\r\n")))
+           (many-short-lines
+            (babel:string-to-octets
+             (with-output-to-string (s)
+               (format s #?"GET / HTTP/1.1\r\n")
+               (loop repeat (floor size 60)
+                     do (format s #?"X: ~A\r\n" (make-string 55 :initial-element #\a)))
+               (format s #?"\r\n")))))
+      ;; Both inputs take the same number of calls; only the length of the
+      ;; line kept between calls differs. Quadratic re-parsing makes the long
+      ;; line ~100x slower; linear parsing keeps them within a small factor.
+      (ok (< (seconds-to-feed one-long-line)
+             (* 10 (max (seconds-to-feed many-short-lines) 1/100)))
+          "a 60KB header line fed one byte at a time costs about as much as 60KB of short lines"))))
+
+(subtest "header lines split anywhere parse the same"
+  (labels ((parse-chunks (chunks)
+             ;; What make-parser reports for CHUNKS, or the condition it signals.
+             (handler-case
+                 (let* ((http (make-http-request))
+                        (body '())
+                        (parser (make-parser http
+                                             :body-callback
+                                             (lambda (data start end)
+                                               (push (babel:octets-to-string data :start start :end end)
+                                                     body))))
+                        (result nil))
+                   (dolist (chunk chunks)
+                     (setq result (multiple-value-list (funcall parser chunk))))
+                   (list (http-method http)
+                         (http-resource http)
+                         (sort (loop for k being the hash-keys of (http-headers http)
+                                     using (hash-value v)
+                                     collect (cons k v))
+                               #'string< :key #'car)
+                         (apply #'concatenate 'string (reverse body))
+                         (cdr result)))
+               (condition (c) (list :condition (type-of c)))))
+           (split-failures (octets)
+             (let ((expected (parse-chunks (list octets))))
+               (loop for i from 1 below (length octets)
+                     unless (equal (parse-chunks (list (subseq octets 0 i) (subseq octets i)))
+                                   expected)
+                     collect i))))
+    (let* ((octets (babel:string-to-octets
+                    (concatenate 'string
+                                 "GET /" (make-string 100 :initial-element #\u) #?" HTTP/1.1\r\n"
+                                 #?"Host: example.com\r\n"
+                                 "X-Long: " (make-string 200 :initial-element #\a) #?"\r\n"
+                                 #?"Content-Length: 5\r\n"
+                                 #?"\r\n"
+                                 "hello")))
+           (expected (parse-chunks (list octets))))
+      (is (fourth expected) "hello" "sanity: the body is parsed in a single call")
+      (is (split-failures octets) nil "every 2-way split gives the same result")
+      (is (parse-chunks (loop for i from 0 below (length octets)
+                              collect (subseq octets i (1+ i))))
+          expected
+          "fed one byte at a time gives the same result"
+          :test #'equal))))
+
+;; Holding an incomplete line back must not hold back a line that is complete:
+;; the blank line that ends the headers is acted on in the call that brings it.
+(subtest "headers complete in the call that brings their last byte"
+  (let* ((octets (babel:string-to-octets #?"GET / HTTP/1.1\r\nHost: x\r\n\r\n"))
+         (parser (make-parser (make-http-request)))
+         (header-complete-p-per-call
+          (loop for i from 0 below (length octets)
+                collect (nth-value 1 (funcall parser octets :start i :end (1+ i))))))
+    (is (position t header-complete-p-per-call) (1- (length octets))
+        "header-complete-p turns true exactly at the final LF")))
+
+;; Bytes of an unterminated line are kept without being parsed, so an invalid
+;; byte in it is reported once its line ends, not when the byte arrives.
+(subtest "an invalid byte in a kept line is reported when the line ends"
+  (let ((parser (make-parser (make-http-request))))
+    (funcall parser (babel:string-to-octets "GE"))
+    (ok (funcall parser (babel:string-to-octets "T@ /"))
+        "no error while the request line is still unterminated")
+    (is-error (funcall parser (babel:string-to-octets #?"\r\n"))
+              'fast-http.error:invalid-method
+              "the error is signalled when the line ends")))
+
+(subtest "an unterminated line fed one byte at a time is still bounded"
+  (is-error
+   (let ((parser (make-parser (make-http-request))))
+     (funcall parser (babel:string-to-octets #?"GET / HTTP/1.1\r\nX: "))
+     (let ((a (babel:string-to-octets "a")))
+       (loop repeat (+ fast-http:*max-header-line-bytes* 10)
+             do (funcall parser a))))
+   'fast-http.error:header-overflow
+   "an unterminated header line past the byte limit signals header-overflow"))
+
 ;; The requests parsed after a chunked body must not depend on how the stream is
 ;; split across calls, otherwise the same bytes yield different requests by TCP
 ;; segmentation -- a request-smuggling / desync primitive.

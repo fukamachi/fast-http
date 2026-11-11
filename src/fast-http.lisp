@@ -113,6 +113,56 @@
 Past this bound make-parser signals header-overflow rather than buffering, so a
 line that never terminates cannot grow the buffer until the heap is exhausted.")
 
+;; The incomplete line MAKE-PARSER keeps between calls, parsed again together
+;; with the next call's data.
+(defstruct (kept-line (:constructor make-kept-line ()))
+  (octets (make-array 0 :element-type '(unsigned-byte 8)) :type simple-byte-vector)
+  (length 0 :type fixnum))
+
+(defun kept-line-empty-p (kept)
+  (zerop (kept-line-length kept)))
+
+(defun kept-line-add (kept data start end)
+  "Append DATA[START, END) to KEPT."
+  (declare (type simple-byte-vector data)
+           (type fixnum start end))
+  (let* ((old-length (kept-line-length kept))
+         (new-length (+ old-length (- end start))))
+    (when (< (length (kept-line-octets kept)) new-length)
+      ;; Grow geometrically so a line arriving in small pieces is copied O(1)
+      ;; times per byte on average.
+      (let ((grown (make-array (max new-length (* 2 (length (kept-line-octets kept))))
+                               :element-type '(unsigned-byte 8))))
+        (replace grown (kept-line-octets kept) :end2 old-length)
+        (setf (kept-line-octets kept) grown)))
+    (replace (kept-line-octets kept) data :start1 old-length :start2 start :end2 end)
+    (setf (kept-line-length kept) new-length)))
+
+(defun kept-line-take (kept data start end)
+  "Return a new vector of the kept bytes followed by DATA[START, END), and empty KEPT.
+The vector is new because callbacks may hold on to the data they are given."
+  (declare (type simple-byte-vector data)
+           (type fixnum start end))
+  (let* ((kept-length (kept-line-length kept))
+         (octets (make-array (+ kept-length (- end start)) :element-type '(unsigned-byte 8))))
+    (replace octets (kept-line-octets kept) :end2 kept-length)
+    (replace octets data :start1 kept-length :start2 start :end2 end)
+    (setf (kept-line-octets kept) (make-array 0 :element-type '(unsigned-byte 8))
+          (kept-line-length kept) 0)
+    octets))
+
+(defun kept-line-awaits-end-p (kept http)
+  "True when KEPT holds part of a request/status or header line that no byte
+seen so far can end. Such a line ends only at a LF; the byte after a LF is
+needed too (it tells whether the next line folds into this one), so a kept
+line ending in LF is ready to be parsed again."
+  (and (not (kept-line-empty-p kept))
+       (let ((state (http-state http)))
+         (or (= state +state-first-line+)
+             (= state +state-headers+)
+             (= state +state-trailing-headers+)))
+       (/= (aref (kept-line-octets kept) (1- (kept-line-length kept))) +lf+)))
+
 (defun-careful make-parser (http &key first-line-callback header-callback body-callback finish-callback (head-request nil))
   (declare (type http http))
   (let (callbacks
@@ -125,7 +175,7 @@ line that never terminates cannot grow the buffer until the heap is exhausted.")
 
         (header-value-buffer nil)
         parsing-header-field
-        data-buffer
+        (kept-line (make-kept-line))
 
         header-complete-p
         completedp)
@@ -209,42 +259,51 @@ line that never terminates cannot grow the buffer until the heap is exhausted.")
                                    (funcall (the function finish-callback)))
                                  (setq completedp t)))))
 
-    (lambda (data &key (start 0) end)
-      (declare (optimize (speed 3) (safety 2)))
-      (when (http-error-p http)
-        (error 'parser-poisoned))
-      (cond
-        ((eql data :eof)
-         (setq completedp t)
-         (when finish-callback
-           (funcall (the function finish-callback))))
-        (T
-         (locally (declare (type simple-byte-vector data)
-                           (type pointer start))
-           (check-type end (or null pointer))
-           (when data-buffer
-             (setq data
-                   (coerce-to-sequence
-                    (xnconc (xsubseq data-buffer 0)
-                            (xsubseq (the simple-byte-vector data) start (or end (length data))))))
-             (setq data-buffer nil
-                   start 0
-                   end nil))
-           (setf (http-mark http) start)
-           (handler-case
-               (funcall parse-fn http callbacks (the simple-byte-vector data) :start start :end end :head-request head-request)
-             (eof ()
-               (let ((buffered (subseq data (http-mark http) (or end (length data)))))
-                 ;; The mark advances per completed line, so this tail is one
-                 ;; incomplete line; bounding it bounds a single header/request line.
-                 (when (> (length buffered) *max-header-line-bytes*)
-                   (setf (http-error-p http) t)
-                   (error 'header-overflow))
-                 (setq data-buffer buffered)))
-             (parsing-error (e)
+    (flet ((keep-line (data start end)
+             (kept-line-add kept-line data start end)
+             (when (< *max-header-line-bytes* (kept-line-length kept-line))
                (setf (http-error-p http) t)
-               (error e))))))
-      (values http header-complete-p completedp))))
+               (error 'header-overflow))))
+      (lambda (data &key (start 0) end)
+        (declare (optimize (speed 3) (safety 2)))
+        (when (http-error-p http)
+          (error 'parser-poisoned))
+        (cond
+          ((eql data :eof)
+           (setq completedp t)
+           (when finish-callback
+             (funcall (the function finish-callback))))
+          (T
+           (locally (declare (type simple-byte-vector data)
+                             (type pointer start))
+             (check-type end (or null pointer))
+             (let ((end (or end (length data))))
+               (declare (type pointer end))
+               (cond
+                 ((and (kept-line-awaits-end-p kept-line http)
+                       (not (find +lf+ data :start start :end end)))
+                  ;; Parsing the kept line again could only stop where it
+                  ;; stopped last time, so a long line fed in small pieces
+                  ;; would cost O(N^2). Wait for a byte that can end it; an
+                  ;; invalid byte in the line is reported then.
+                  (keep-line data start end))
+                 (T
+                  (unless (kept-line-empty-p kept-line)
+                    (setq data (kept-line-take kept-line data start end)
+                          start 0
+                          end (length data)))
+                  (setf (http-mark http) start)
+                  (handler-case
+                      (funcall parse-fn http callbacks (the simple-byte-vector data) :start start :end end :head-request head-request)
+                    (eof ()
+                      ;; The mark advances per completed line, so this tail
+                      ;; is one incomplete line; bounding it bounds a single
+                      ;; header/request line.
+                      (keep-line data (http-mark http) end))
+                    (parsing-error (e)
+                      (setf (http-error-p http) t)
+                      (error e)))))))))
+        (values http header-complete-p completedp)))))
 
 (defun find-boundary (content-type)
   (declare (type string content-type))
