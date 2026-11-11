@@ -355,7 +355,6 @@ operations per extension line rather than unbounded.")
            (expect-field-end
             (when (http-transfer-encoding-seen-p http)
               (error 'duplicate-transfer-encoding))
-            (setf (http-transfer-encoding-seen-p http) t)
             (skip-until-value-start-and
              (multiple-value-bind (value-start value-end next chunkedp)
                  (parse-header-value-transfer-encoding data (pos) end)
@@ -368,7 +367,11 @@ operations per extension line rather than unbounded.")
                (setf (http-chunked-p http) chunkedp)
                (advance-to* next)
                (callback-data :header-field http callbacks data field-start field-end)
-               (callback-data :header-value http callbacks data value-start value-end)))))
+               (callback-data :header-value http callbacks data value-start value-end)))
+            ;; Marked only once the whole line is parsed: a line cut off by the
+            ;; end of the data is parsed again from its start, and must not then
+            ;; count as a second Transfer-Encoding header.
+            (setf (http-transfer-encoding-seen-p http) t)))
           ("upgrade"
            (expect-field-end
             (skip-until-value-start-and

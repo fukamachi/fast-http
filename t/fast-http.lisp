@@ -763,51 +763,88 @@ you?\r
              (* 10 (max (seconds-to-feed many-short-lines) 1/100)))
           "a 60KB header line fed one byte at a time costs about as much as 60KB of short lines"))))
 
+(defun parse-message-chunks (type chunks)
+  "What make-parser reports for a TYPE (:request or :response) message fed as
+CHUNKS, or the type of the condition it signals."
+  (handler-case
+      (let* ((http (ecase type
+                     (:request (make-http-request))
+                     (:response (make-http-response))))
+             (body '())
+             (parser (make-parser http
+                                  :body-callback
+                                  (lambda (data start end)
+                                    (push (babel:octets-to-string data :start start :end end)
+                                          body))))
+             (result nil))
+        (dolist (chunk chunks)
+          (setq result (multiple-value-list (funcall parser chunk))))
+        (list (if (http-request-p http)
+                  (list (http-method http) (http-resource http))
+                  (http-status http))
+              (sort (loop for k being the hash-keys of (http-headers http)
+                            using (hash-value v)
+                          collect (cons k v))
+                    #'string< :key #'car)
+              (apply #'concatenate 'string (reverse body))
+              (cdr result)))
+    (condition (c) (list :condition (type-of c)))))
+
+(defun split-failures (type octets)
+  "Positions where feeding OCTETS in two calls differs from feeding them in one."
+  (let ((expected (parse-message-chunks type (list octets))))
+    (loop for i from 1 below (length octets)
+          unless (equal (parse-message-chunks type (list (subseq octets 0 i) (subseq octets i)))
+                        expected)
+            collect i)))
+
+(defun bytewise (octets)
+  (loop for i from 0 below (length octets)
+        collect (subseq octets i (1+ i))))
+
 (subtest "header lines split anywhere parse the same"
-  (labels ((parse-chunks (chunks)
-             ;; What make-parser reports for CHUNKS, or the condition it signals.
-             (handler-case
-                 (let* ((http (make-http-request))
-                        (body '())
-                        (parser (make-parser http
-                                             :body-callback
-                                             (lambda (data start end)
-                                               (push (babel:octets-to-string data :start start :end end)
-                                                     body))))
-                        (result nil))
-                   (dolist (chunk chunks)
-                     (setq result (multiple-value-list (funcall parser chunk))))
-                   (list (http-method http)
-                         (http-resource http)
-                         (sort (loop for k being the hash-keys of (http-headers http)
-                                     using (hash-value v)
-                                     collect (cons k v))
-                               #'string< :key #'car)
-                         (apply #'concatenate 'string (reverse body))
-                         (cdr result)))
-               (condition (c) (list :condition (type-of c)))))
-           (split-failures (octets)
-             (let ((expected (parse-chunks (list octets))))
-               (loop for i from 1 below (length octets)
-                     unless (equal (parse-chunks (list (subseq octets 0 i) (subseq octets i)))
-                                   expected)
-                     collect i))))
-    (let* ((octets (babel:string-to-octets
-                    (concatenate 'string
-                                 "GET /" (make-string 100 :initial-element #\u) #?" HTTP/1.1\r\n"
-                                 #?"Host: example.com\r\n"
-                                 "X-Long: " (make-string 200 :initial-element #\a) #?"\r\n"
-                                 #?"Content-Length: 5\r\n"
-                                 #?"\r\n"
-                                 "hello")))
-           (expected (parse-chunks (list octets))))
-      (is (fourth expected) "hello" "sanity: the body is parsed in a single call")
-      (is (split-failures octets) nil "every 2-way split gives the same result")
-      (is (parse-chunks (loop for i from 0 below (length octets)
-                              collect (subseq octets i (1+ i))))
-          expected
-          "fed one byte at a time gives the same result"
-          :test #'equal))))
+  (let* ((octets (babel:string-to-octets
+                  (concatenate 'string
+                               "GET /" (make-string 100 :initial-element #\u) #?" HTTP/1.1\r\n"
+                               #?"Host: example.com\r\n"
+                               "X-Long: " (make-string 200 :initial-element #\a) #?"\r\n"
+                               #?"Content-Length: 5\r\n"
+                               #?"\r\n"
+                               "hello")))
+         (expected (parse-message-chunks :request (list octets))))
+    (is (third expected) "hello" "sanity: the body is parsed in a single call")
+    (is (split-failures :request octets) nil "every 2-way split gives the same result")
+    (is (parse-message-chunks :request (bytewise octets)) expected
+        "fed one byte at a time gives the same result"
+        :test #'equal)))
+
+;; Parsing a header line again after a call ends inside it must not count the
+;; line twice, or a single Transfer-Encoding header looks like two.
+(subtest "a Transfer-Encoding line split anywhere parses the same"
+  (let* ((octets (babel:string-to-octets
+                  (concatenate 'string
+                               #?"POST / HTTP/1.1\r\n"
+                               #?"Host: example.com\r\n"
+                               #?"Transfer-Encoding: chunked\r\n"
+                               #?"\r\n"
+                               #?"5\r\nhello\r\n0\r\n\r\n")))
+         (expected (parse-message-chunks :request (list octets))))
+    (is (third expected) "hello" "sanity: the chunked body is parsed in a single call")
+    (is (split-failures :request octets) nil "every 2-way split gives the same result")
+    (is (parse-message-chunks :request (bytewise octets)) expected
+        "fed one byte at a time gives the same result"
+        :test #'equal))
+  (let ((octets (babel:string-to-octets
+                 (concatenate 'string
+                              #?"POST / HTTP/1.1\r\n"
+                              #?"Transfer-Encoding: chunked\r\n"
+                              #?"Transfer-Encoding: chunked\r\n"
+                              #?"\r\n"))))
+    (is (parse-message-chunks :request (list octets))
+        '(:condition fast-http.error:duplicate-transfer-encoding)
+        "two Transfer-Encoding headers are still rejected")
+    (is (split-failures :request octets) nil
+        "two Transfer-Encoding headers are rejected at every 2-way split")))
 
 ;; Holding an incomplete line back must not hold back a line that is complete:
 ;; the blank line that ends the headers is acted on in the call that brings it.
