@@ -83,6 +83,7 @@
            :invalid-fragment
            :lf-expected
            :invalid-header-token
+           :obsolete-line-folding
            :invalid-content-length
            :duplicate-content-length
            :invalid-chunk-size

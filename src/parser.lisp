@@ -123,6 +123,12 @@ operations per extension line rather than unbounded.")
   ((fast-http.error::description :initform "expect failed")))
 
 
+;; The SP that replaces an obs-fold in a response header value, passed to the
+;; :header-value callback as data of its own.
+(define-constant +space-octets+
+    (make-array 1 :element-type '(unsigned-byte 8) :initial-element 32)
+  :test #'equalp)
+
 ;;
 ;; Tokens
 
@@ -296,6 +302,8 @@ operations per extension line rather than unbounded.")
                           (cond
                             ((or (= (current) +space+)
                                  (= (current) +tab+))
+                             (when (typep http 'http-request)
+                               (error 'obsolete-line-folding))
                              (skip* #\Space #\Tab)
                              (if (= (current) +cr+)
                                  ;; empty body
@@ -478,6 +486,32 @@ operations per extension line rather than unbounded.")
           (t (error 'invalid-content-length)))))
     (error 'eof)))
 
+(defun-speedy parse-folded-line (http callbacks data start end)
+  "Parse a header line starting with SP or HT, which continues the previous
+header line (obs-fold). RFC 9112 5.2: a request is rejected; in a response
+the fold is replaced with one SP. Other HTTP objects (multipart part
+headers) keep the line's leading whitespace, as before."
+  (declare (type simple-byte-vector data)
+           (type pointer start end))
+  (cond
+    ((typep http 'http-request)
+     (error 'obsolete-line-folding))
+    ((typep http 'http-response)
+     (or (with-octets-parsing (data :start start :end end)
+           (skip* #\Space #\Tab)
+           (let ((value-start (pos)))
+             (skip* (not #\Return))
+             (advance)
+             (skip #\Newline)
+             ;; Both callbacks fire only once the line is complete, so a line
+             ;; parsed again after the end of the data never adds a second SP.
+             (callback-data :header-value http callbacks +space-octets+ 0 1)
+             (callback-data :header-value http callbacks data value-start (- (pos) 2))
+             (pos)))
+         (error 'eof)))
+    (t
+     (parse-header-value http callbacks data start end))))
+
 (defun-speedy parse-header-line (http callbacks data start end)
   (declare (type simple-byte-vector data)
            (type pointer start end))
@@ -488,7 +522,7 @@ operations per extension line rather than unbounded.")
     (cond
       ((or (= current +tab+)
            (= current +space+))
-       (parse-header-value http callbacks data start end))
+       (parse-folded-line http callbacks data start end))
       ((/= current +cr+)
        (parse-header-field-and-value http callbacks data start end))
       (t
@@ -512,7 +546,11 @@ operations per extension line rather than unbounded.")
               (return-from parse-headers (1+ (pos)))
               (error 'expect-failed)))
 
-        (advance-to* (parse-header-field-and-value http callbacks data start end))
+        (advance-to* (if (plusp (http-header-read http))
+                         ;; An earlier call already parsed a line of this
+                         ;; header block, so this line may continue it.
+                         (parse-header-line http callbacks data start end)
+                         (parse-header-field-and-value http callbacks data start end)))
 
         (setf (http-mark http) (pos))
         (loop

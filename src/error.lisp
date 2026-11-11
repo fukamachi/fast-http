@@ -29,6 +29,7 @@
            :invalid-fragment
            :lf-expected
            :invalid-header-token
+           :obsolete-line-folding
            :invalid-content-length
            :duplicate-content-length
            :invalid-chunk-size
@@ -132,6 +133,8 @@
   ((description :initform "LF character expected")))
 (define-condition invalid-header-token (parsing-error)
   ((description :initform "invalid character in header")))
+(define-condition obsolete-line-folding (invalid-header-token)
+  ((description :initform "obsolete line folding in a request header")))
 (define-condition invalid-content-length (parsing-error)
   ((description :initform "invalid character in content-length header")))
 (define-condition duplicate-content-length (parsing-error)

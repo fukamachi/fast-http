@@ -265,28 +265,41 @@
             nil
             "M-SEARCH request")
 
-(is-request (str #?"GET / HTTP/1.1\r\n"
-                 #?"Line1:   abc\r\n"
-                 #?"\tdef\r\n"
-                 #?" ghi\r\n"
-                 #?"\t\tjkl\r\n"
-                 #?"  mno \r\n"
-                 #?"\t \tqrs\r\n"
-                 #?"Line2: \t line2\t\r\n"
-                 #?"Line3:\r\n"
-                 #?" line3\r\n"
-                 #?"Line4: \r\n"
-                 #?" \r\n"
-                 #?"Connection:\r\n"
-                 #?" close\r\n"
-                 #?"\r\n")
-            '(:line1 #?"abc\tdef ghi\t\tjkl  mno \t \tqrs"
-              :line2 #?"line2\t"
-              :line3 "line3"
-              :line4 ""
-              :connection "close")
-            nil
-            "line folding in header value")
+;; RFC 9112 5.2: a server rejects obsolete line folding in a request, and a
+;; user agent replaces each fold in a response with SP.
+(is-error (funcall (make-parser (make-http-request))
+                   (babel:string-to-octets
+                    (str #?"GET / HTTP/1.1\r\n"
+                         #?"Line1:   abc\r\n"
+                         #?"\tdef\r\n"
+                         #?"\r\n")))
+          'fast-http.error:obsolete-line-folding
+          "line folding in a request header value is rejected")
+
+(is-response (str #?"HTTP/1.1 200 OK\r\n"
+                  #?"Content-Length: 0\r\n"
+                  #?"Line1:   abc\r\n"
+                  #?"\tdef\r\n"
+                  #?" ghi\r\n"
+                  #?"\t\tjkl\r\n"
+                  #?"  mno \r\n"
+                  #?"\t \tqrs\r\n"
+                  #?"Line2: \t line2\t\r\n"
+                  #?"Line3:\r\n"
+                  #?" line3\r\n"
+                  #?"Line4: \r\n"
+                  #?" \r\n"
+                  #?"Connection:\r\n"
+                  #?" close\r\n"
+                  #?"\r\n")
+             '(:content-length "0"
+               :line1 #?"abc def ghi jkl mno  qrs"
+               :line2 #?"line2\t"
+               :line3 "line3"
+               :line4 ""
+               :connection "close")
+             nil
+             "line folding in a response header value is replaced with SP")
 
 (is-request (str #?"GET http://hypnotoad.org?hail=all HTTP/1.1\r\n"
                  #?"\r\n")
@@ -845,6 +858,48 @@ CHUNKS, or the type of the condition it signals."
         "two Transfer-Encoding headers are still rejected")
     (is (split-failures :request octets) nil
         "two Transfer-Encoding headers are rejected at every 2-way split")))
+
+;; A folded header line split across calls must give the same result as in a
+;; single call: rejected in a request, joined with SP in a response.
+(subtest "a folded header line split anywhere parses the same"
+  (dolist (fold (list #?"X-Fold: abc\r\n \tdef\r\n"
+                      #?"X-Fold:\r\n def\r\n"))
+    (let ((request (babel:string-to-octets
+                    (concatenate 'string #?"GET / HTTP/1.1\r\nHost: x\r\n" fold #?"\r\n")))
+          (response (babel:string-to-octets
+                     (concatenate 'string #?"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n" fold #?"\r\n"))))
+      (is (parse-message-chunks :request (list request))
+          '(:condition fast-http.error:obsolete-line-folding)
+          "a request with a folded header is rejected")
+      (is (split-failures :request request) nil
+          "a request with a folded header: every 2-way split gives the same result")
+      (is (parse-message-chunks :request (bytewise request))
+          '(:condition fast-http.error:obsolete-line-folding)
+          "a request with a folded header: fed one byte at a time")
+      (is (cdr (assoc "x-fold" (second (parse-message-chunks :response (list response)))
+                      :test #'string=))
+          (if (search "abc" fold) "abc def" "def")
+          "a folded response header is joined with SP")
+      (is (split-failures :response response) nil
+          "a response with a folded header: every 2-way split gives the same result")
+      (is (parse-message-chunks :response (bytewise response))
+          (parse-message-chunks :response (list response))
+          "a response with a folded header: fed one byte at a time"
+          :test #'equal))))
+
+;; Whitespace before the first header line is not a fold: there is no line to
+;; continue. It is rejected however the input is split.
+(subtest "whitespace before the first header line is rejected wherever split"
+  (dolist (type '(:request :response))
+    (let ((octets (babel:string-to-octets
+                   (concatenate 'string
+                                (if (eq type :request) #?"GET / HTTP/1.1\r\n" #?"HTTP/1.1 200 OK\r\n")
+                                #?" X: y\r\n\r\n"))))
+      (is (parse-message-chunks type (list octets))
+          '(:condition fast-http.error:invalid-header-token)
+          (format nil "~(~A~): rejected in a single call" type))
+      (is (split-failures type octets) nil
+          (format nil "~(~A~): every 2-way split gives the same result" type)))))
 
 ;; Holding an incomplete line back must not hold back a line that is complete:
 ;; the blank line that ends the headers is acted on in the call that brings it.
