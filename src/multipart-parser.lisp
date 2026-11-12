@@ -40,13 +40,16 @@ call of HTTP-MULTIPART-PARSE, so its length has to be bounded.")
     (error 'invalid-boundary))
   boundary)
 
+(defun make-part-header-parser ()
+  "An HTTP object ready to parse one part's header block."
+  (let ((parser (make-http)))
+    (setf (http-state parser) +state-headers+)
+    parser))
+
 (defstruct (ll-multipart-parser (:constructor make-ll-multipart-parser
                                   (&key ((:boundary given-boundary))
                                    &aux (boundary (check-boundary given-boundary))
-                                        (header-parser
-                                         (let ((parser (make-http)))
-                                           (setf (http-state parser) +state-headers+)
-                                           parser)))))
+                                        (header-parser (make-part-header-parser)))))
   (state 0 :type fixnum)
   (header-parser)
   boundary
@@ -278,8 +281,13 @@ END, and the caller must not pass them again."
                 ;; not an ERROR and must never escape to the caller; with the
                 ;; blank line present it cannot occur, so if it ever does the
                 ;; body is rejected.
-                (setf (http-mark header-parser) p
-                      (http-state header-parser) +state-headers+)
+                ;; A new parser for each part: what PARSE-HEADERS records
+                ;; about a block (lines read, Content-Length, Transfer-Encoding)
+                ;; belongs to that part, and would reject the next part's
+                ;; headers as duplicates or as too many lines.
+                (setf header-parser (make-part-header-parser)
+                      (ll-multipart-parser-header-parser parser) header-parser
+                      (http-mark header-parser) p)
                 (let ((next (handler-case
                                 (parse-headers header-parser callbacks data p end)
                               (eof ()
@@ -289,7 +297,6 @@ END, and the caller must not pass them again."
                     (handler-case (funcall callback parser)
                       (error (e)
                         (error 'cb-headers-complete :error e))))
-                  (setf (http-state header-parser) +state-headers+)
                   (go-state +body-start+ 0)))
 
                (+body-start+

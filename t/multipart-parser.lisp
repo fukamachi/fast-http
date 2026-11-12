@@ -634,4 +634,43 @@ or (:condition <type>) if any condition escaped."
           '(:condition fast-http.error:header-overflow)
           "a part header block over the limit: fed one byte at a time"))))
 
+;;
+;; Header state of one part must not carry into the next: each part's header
+;; block is parsed as if it were the first.
+
+(labels ((form (parts)
+           ;; A multipart body with boundary AaB03x; each part is (headers body).
+           (bv (with-output-to-string (s)
+                 (loop for (headers body) in parts
+                       do (format s "--AaB03x~C~C~{~A~C~C~}~C~C~A~C~C"
+                                  #\Return #\Newline
+                                  (loop for h in headers append (list h #\Return #\Newline))
+                                  #\Return #\Newline body #\Return #\Newline))
+                 (format s "--AaB03x--~C~C" #\Return #\Newline))))
+         (disposition (name)
+           (format nil "Content-Disposition: form-data; name=\"~A\"" name))
+         (part-names (parts)
+           ;; The field names of the parsed PARTS, or (:condition <type>).
+           (let ((result (parse-multipart-chunks "multipart/form-data; boundary=AaB03x"
+                                                 (list (form parts)))))
+             (if (eq (first result) :condition)
+                 result
+                 (mapcar #'first result)))))
+  (is (part-names (list (list (list (disposition "a")) "one")
+                        (list (list " X: y" (disposition "b")) "two")))
+      '(:condition fast-http.error:invalid-header-token)
+      "a second part whose header block starts with whitespace is rejected like the first")
+  (is (length (part-names (loop for i below 600
+                                collect (list (list (disposition i) "X: y") "v"))))
+      600
+      "600 parts with 2 header lines each are not limited by the lines of earlier parts")
+  (is (part-names (list (list (list (disposition "a") "Content-Length: 3") "one")
+                        (list (list (disposition "b") "Content-Length: 4") "four")))
+      '("a" "b")
+      "parts with different Content-Length headers are not duplicates of each other")
+  (is (part-names (list (list (list (disposition "a") "Transfer-Encoding: binary") "one")
+                        (list (list (disposition "b") "Transfer-Encoding: binary") "two")))
+      '("a" "b")
+      "parts with a Transfer-Encoding header each are not duplicates of each other"))
+
 (finalize)
