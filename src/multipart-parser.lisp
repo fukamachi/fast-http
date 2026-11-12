@@ -28,9 +28,22 @@
            :http-multipart-parse))
 (in-package :fast-http.multipart-parser)
 
+(defconstant +max-boundary-length+ 70
+  "Maximum length of a multipart boundary (RFC 2046). The client chooses the
+boundary, and an incomplete delimiter is copied and scanned again on every
+call of HTTP-MULTIPART-PARSE, so its length has to be bounded.")
+
+(defun check-boundary (boundary)
+  "Return BOUNDARY, or signal INVALID-BOUNDARY unless it is 1 to
++MAX-BOUNDARY-LENGTH+ characters long."
+  (unless (<= 1 (length boundary) +max-boundary-length+)
+    (error 'invalid-boundary))
+  boundary)
+
 (defstruct (ll-multipart-parser (:constructor make-ll-multipart-parser
-                                  (&key boundary
-                                   &aux (header-parser
+                                  (&key ((:boundary given-boundary))
+                                   &aux (boundary (check-boundary given-boundary))
+                                        (header-parser
                                          (let ((parser (make-http)))
                                            (setf (http-state parser) +state-headers+)
                                            parser)))))
@@ -52,10 +65,10 @@
   "Maximum size in bytes of one part's header block, from its first byte
 through the blank line that ends it. A larger block signals HEADER-OVERFLOW.
 
-Incomplete part headers are kept between calls of HTTP-MULTIPART-PARSE and
-re-parsed with the next data. Without this limit headers that keep arriving
-in small chunks would be buffered without bound, and every call would copy
-and re-parse the whole buffer (O(N^2)).
+Incomplete part headers are kept between calls of HTTP-MULTIPART-PARSE until
+the blank line arrives. Without this limit headers that keep arriving in small
+chunks would be buffered without bound, and every call would copy the whole
+buffer.
 
 The limit applies to the whole block whether it arrives in one call or is
 split across calls, so whether a request is accepted does not depend on
@@ -79,7 +92,44 @@ where the input is split.")
                             body-done)
              collect `(defconstant ,(format-symbol t "+~A+" state) ,i)))
 
+(defun join-kept-bytes (kept data start end)
+  "A fresh vector of KEPT followed by DATA[START, END).
+REPLACE on declared vectors copies in bulk; CONCATENATE here goes element by
+element, which is the main cost when input arrives in small chunks."
+  (declare (type simple-byte-vector kept data)
+           (type fixnum start end))
+  (let ((joined (make-array (+ (length kept) (- end start))
+                            :element-type '(unsigned-byte 8))))
+    (replace joined kept)
+    (replace joined data :start1 (length kept) :start2 start :end2 end)
+    joined))
+
+(defun part-header-block-end (data p end search-start)
+  "Position just after the blank line ending the part header block that starts
+at P, or NIL if it has not arrived yet. Looks for CRLF CRLF from SEARCH-START,
+which lets a caller skip bytes it has already looked at.
+
+Only CRLF ends a header line in PARSE-HEADERS, so LF LF does not end the block.
+A block that begins with CRLF is a part without headers."
+  (declare (type simple-byte-vector data)
+           (type fixnum p end search-start))
+  (flet ((crlf-at-p (i)
+           (and (< (1+ i) end)
+                (= (aref data i) +cr+)
+                (= (aref data (1+ i)) +lf+))))
+    (if (crlf-at-p p)
+        (+ p 2)
+        (loop for i of-type fixnum from search-start below (- end 3)
+              when (and (crlf-at-p i) (crlf-at-p (+ i 2)))
+                return (+ i 4)))))
+
 (defun http-multipart-parse (parser callbacks data &key (start 0) end)
+  "Parse DATA[START, END) as the next piece of a multipart body.
+
+Returns a position in DATA, relative to the DATA given to this call. Bytes that
+cannot be decided yet (incomplete part headers or an incomplete delimiter) are
+kept by PARSER and count as consumed: when any are kept, the return value is
+END, and the caller must not pass them again."
   (declare (type simple-byte-vector data))
   (let* ((end (or end (length data)))
          (boundary (map '(simple-array (unsigned-byte 8) (*)) #'char-code (ll-multipart-parser-boundary parser)))
@@ -90,17 +140,22 @@ where the input is split.")
       (return-from http-multipart-parse start))
     ;; Parse the bytes kept at the end of the previous call again, together
     ;; with the new data, so that a delimiter or part headers split across
-    ;; calls are seen as contiguous bytes. ORIG-START and PREPENDED record how
-    ;; the coordinates shifted, so the position returned to the caller stays
-    ;; relative to the data of THIS call (see the end of the function).
+    ;; calls are seen as contiguous bytes. ORIG-START, ORIG-END and PREPENDED
+    ;; record how the coordinates shifted, so the position returned to the
+    ;; caller stays relative to the data of THIS call (see the end of the
+    ;; function).
     (let ((orig-start start)
+          (orig-end end)
           (prepended 0))
      (when-let (pending (ll-multipart-parser-pending parser))
-      (setf data (concatenate 'simple-byte-vector pending (subseq data start end))
+      (setf data (join-kept-bytes pending data start end)
             start 0
             end (length data)
             prepended (length pending)
             (ll-multipart-parser-pending parser) nil))
+     ;; An open part's body continues from the first byte of this call.
+     (when (ll-multipart-parser-body-mark parser)
+       (setf (ll-multipart-parser-body-mark parser) start))
 
     (macrolet ((call-body-cb (&optional (end '(ll-multipart-parser-boundary-mark parser)))
                  ;; Send DATA[BODY-MARK, END) to the body callback.
@@ -195,40 +250,40 @@ where the input is split.")
                 ;; function, so [P, END) holds every header byte received for
                 ;; this part so far.
                 ;;
-                ;; First probe the block with a throwaway parser that runs no
-                ;; callbacks. If the headers are incomplete, keep the whole
-                ;; block and probe it again next call; only once PARSE-HEADERS
-                ;; consumes the block without signalling EOF is it parsed for
-                ;; real. Re-parsing the whole block each time, rather than
+                ;; Keep the block until the blank line that ends it has arrived,
+                ;; and only then parse it. Bytes before the last 3 kept ones have
+                ;; already been searched, so each call does work proportional to
+                ;; its own data. Parsing the whole block at once, rather than
                 ;; resuming from the last complete line, keeps the result
                 ;; independent of how the input is split -- including a header
-                ;; value folded onto a later line (obs-fold), whose
-                ;; continuation cannot be resumed from its own start.
-                ;; EOF is not an ERROR, so it must never escape to the caller.
+                ;; value folded onto a later line (obs-fold), whose continuation
+                ;; cannot be resumed from its own start.
                 ;;
-                ;; +MAX-PART-HEADER-BYTES+ bounds the whole block, checked the
-                ;; same way when it is complete and when it is kept for the
-                ;; next call. Every byte kept is part of the block, so a kept
-                ;; prefix exceeds the limit only if the whole block would; the
-                ;; verdict does not depend on how the input is split.
-                (let ((header-end
-                        (handler-case
-                            (let ((probe (make-http)))
-                              (setf (http-state probe) +state-headers+)
-                              (parse-headers probe (make-callbacks) data p end))
-                          (eof ()
-                            (when (< +max-part-header-bytes+ (- end p))
-                              (error 'header-overflow))
-                            (setf (ll-multipart-parser-pending parser)
-                                  (subseq data p end))
-                            (go exit-loop)))))
-                  (when (< +max-part-header-bytes+ (- header-end p))
-                    (error 'header-overflow)))
-                ;; The headers are complete in [P, END): parse them once for
-                ;; real. PARSE-HEADERS only returns at the end of the headers.
+                ;; +MAX-PART-HEADER-BYTES+ bounds the whole block and is checked
+                ;; before any parsing, the same way when it is complete and when
+                ;; it is kept for the next call. Every byte kept is part of the
+                ;; block, so a kept prefix exceeds the limit only if the whole
+                ;; block would; neither the verdict nor the error depends on how
+                ;; the input is split.
+                (let ((block-end (part-header-block-end
+                                  data p end (max p (- prepended 3)))))
+                  (when (< +max-part-header-bytes+ (- (or block-end end) p))
+                    (error 'header-overflow))
+                  (unless block-end
+                    (setf (ll-multipart-parser-pending parser)
+                          (subseq data p end))
+                    (go exit-loop)))
+                ;; The blank line is in [P, END), so parse the block once.
+                ;; PARSE-HEADERS only returns at the end of the headers. EOF is
+                ;; not an ERROR and must never escape to the caller; with the
+                ;; blank line present it cannot occur, so if it ever does the
+                ;; body is rejected.
                 (setf (http-mark header-parser) p
                       (http-state header-parser) +state-headers+)
-                (let ((next (parse-headers header-parser callbacks data p end)))
+                (let ((next (handler-case
+                                (parse-headers header-parser callbacks data p end)
+                              (eof ()
+                                (error 'invalid-multipart-body)))))
                   (setq p (1- next)) ;; XXX
                   (when-let (callback (callbacks-headers-complete callbacks))
                     (handler-case (funcall callback parser)
@@ -308,11 +363,11 @@ where the input is split.")
           (when (ll-multipart-parser-body-mark parser)
             (setf (ll-multipart-parser-body-mark parser) 0))
           (setf (ll-multipart-parser-boundary-mark parser) nil))
-        ;; P indexes DATA, which may begin with bytes re-parsed from the
-        ;; previous call. Return a position relative to the data passed in
-        ;; THIS call, so a caller advancing its own cursor is never sent past
-        ;; the data it gave (a position inside the re-parsed bytes means none
-        ;; of this call's data was consumed, so return its start).
-        (if (zerop prepended)
-            p
-            (max orig-start (+ orig-start (- p prepended)))))))))
+        ;; Bytes kept for the next call are consumed, so return the end of
+        ;; this call's data. Otherwise P indexes DATA; if DATA was joined with
+        ;; bytes re-parsed from the previous call, translate it to a position
+        ;; in the data passed in THIS call.
+        (cond
+          ((ll-multipart-parser-pending parser) orig-end)
+          ((zerop prepended) p)
+          (t (+ orig-start (- p prepended)))))))))

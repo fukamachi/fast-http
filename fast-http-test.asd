@@ -20,6 +20,7 @@
                 ((:test-file "parser" :depends-on ("test-utils"))
                  (:test-file "fast-http" :depends-on ("test-utils"))
                  (:test-file "multipart-parser" :depends-on ("test-utils"))
+                 (:test-file "multipart-parser-bounds" :depends-on ("test-utils"))
                  (:test-file "util")
                  (:file "test-utils")
                  (:file "benchmark"))))
